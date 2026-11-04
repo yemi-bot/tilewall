@@ -49,7 +49,7 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
     const host = location.hostname.replace(/^(www\.|m\.)/, '');
     const isYT = /(^|\.)youtube\.com$/.test(host);
     const isTwitch = /(^|\.)twitch\.tv$/.test(host);
-    const st = { on: false, target: null, video: null, marked: [], pickedArea: 0 };
+    const st = { on: false, target: null, video: null, marked: [], pickedArea: 0, adSkip: false, adsSkipped: 0 };
 
     function watchable() {
       const p = location.pathname;
@@ -197,18 +197,36 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
       });
     }
 
+    // Backup for ads that still get through: press Skip when it shows, and
+    // jump an unskippable ad to its last moment so the stream comes back.
+    function skipAds() {
+      if (!isYT || !st.adSkip) return;
+      const p = document.querySelector('#movie_player');
+      if (!p || !p.classList.contains('ad-showing')) return;
+      const btn = p.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern');
+      if (btn) btn.click();
+      const v = p.querySelector('video');
+      if (v && isFinite(v.duration) && v.duration > 0 && v.currentTime < v.duration - 0.3) {
+        v.currentTime = v.duration - 0.1;
+        st.adsSkipped++;
+      }
+    }
+
     setInterval(() => {
       apply();
       answerStillWatching();
     }, 700);
+    setInterval(skipAds, 250);
 
     function status() {
-      return { on: st.on, filled: !!st.target };
+      return { on: st.on, filled: !!st.target, adSkip: st.adSkip, adsSkipped: st.adsSkipped };
     }
 
-    function set(on) {
+    function set(on, adSkip) {
       st.on = !!on;
+      st.adSkip = !!adSkip;
       apply();
+      skipAds();
       return status();
     }
 
@@ -216,8 +234,8 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
     return window.__tw;
   }
 
-  function script(on) {
-    return '(' + install.toString() + ')().set(' + (on ? 'true' : 'false') + ')';
+  function script(on, adSkip) {
+    return '(' + install.toString() + ')().set(' + (on ? 'true' : 'false') + ', ' + (adSkip ? 'true' : 'false') + ')';
   }
 
   root.TWFill = { css: FILL_CSS, script };

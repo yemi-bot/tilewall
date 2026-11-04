@@ -12,6 +12,8 @@
   const LAYOUT_NAMES = { grid: 'Grid', focus: 'Focus', solo: 'Solo' };
   const GAPS = [0, 2, 6];
   const FOLLOW_DWELL_MS = 450;
+  // main.js passes adfix=0 when the YouTube ad layer is switched off (A/B tests)
+  const AD_FIX = !/[?&]adfix=0/.test(location.search);
 
   const state = {
     tiles: [], // { id, url, mode: 'fill' | 'page', title }
@@ -206,7 +208,7 @@
 
   function applyFill(rec) {
     if (!rec.ready) return;
-    rec.wv.executeJavaScript(FILL.script(rec.t.mode === 'fill')).catch(() => {});
+    rec.wv.executeJavaScript(FILL.script(rec.t.mode === 'fill', AD_FIX && state.adblock)).catch(() => {});
   }
 
   function onReady(rec) {
@@ -765,6 +767,7 @@
 
   let isFull = false;
   let adblockLive = { on: false, error: null };
+  let startupAdblockPending = false;
 
   function syncDock() {
     dock.querySelectorAll('[data-layout]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.layout === state.layout)));
@@ -800,8 +803,10 @@
   // right now: the block list can still be loading, or fail when offline.
   btnAdblock.addEventListener('click', async () => {
     state.adblock = !state.adblock;
+    startupAdblockPending = false;
     syncDock();
     scheduleSave();
+    for (const rec of recs.values()) applyFill(rec); // ad skipping follows at once
     const r = await tw.setAdblock(state.adblock);
     adblockLive = r;
     syncDock();
@@ -814,7 +819,13 @@
     adblockLive = s;
     syncDock();
     if (state.adblock && s.on && !wasOn && started && state.tiles.length) {
-      toast('Ad blocking is ready.', { label: 'Reload all', run: reloadAll });
+      // Tiles that loaded before the block list was ready played unprotected
+      // (first launch, slow network), so reload them once it is.
+      if (startupAdblockPending) {
+        startupAdblockPending = false;
+        reloadAll();
+        toast('Ad blocking ready. Reloaded the tiles.');
+      }
     }
   });
   btnClean.addEventListener('click', () => toggleClean());
@@ -956,6 +967,7 @@
   async function start() {
     restore(await tw.loadState());
     adblockLive = await tw.adblockStatus();
+    startupAdblockPending = state.adblock && !adblockLive.on;
     isFull = await tw.isFullscreen();
     for (const t of state.tiles) {
       const rec = buildTile(t);

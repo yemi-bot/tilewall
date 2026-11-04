@@ -91,9 +91,12 @@ function rememberWindow() {
 
 // ---------- ad blocking ----------
 
-// Fresh cache (under 3 days) loads instantly. Otherwise download the lists;
-// if that fails (offline), an old cache still beats no blocking at all.
+// Any cached engine loads instantly so tiles are protected from the first
+// load; one older than 3 days is refreshed in the background for next launch.
+// With no cache yet (first launch), download the lists now.
 async function buildBlocker() {
+  // test hook: simulate a slow first download of the block lists
+  if (process.env.TW_ADBLOCK_DELAY_MS) await new Promise((r) => setTimeout(r, Number(process.env.TW_ADBLOCK_DELAY_MS)));
   const { ElectronBlocker } = require('@ghostery/adblocker-electron');
   const cache = path.join(app.getPath('userData'), 'adblock-engine.bin');
   let age = Infinity;
@@ -103,14 +106,7 @@ async function buildBlocker() {
     /* no cache yet */
   }
   const fromCache = () => ElectronBlocker.deserialize(new Uint8Array(fs.readFileSync(cache)));
-  if (age < ADBLOCK_MAX_AGE_MS) {
-    try {
-      return fromCache();
-    } catch (e) {
-      /* corrupt cache: download below */
-    }
-  }
-  try {
+  const download = async () => {
     const fresh = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch);
     try {
       fs.writeFileSync(cache, fresh.serialize());
@@ -118,10 +114,17 @@ async function buildBlocker() {
       /* cache is optional */
     }
     return fresh;
-  } catch (e) {
-    if (age !== Infinity) return fromCache();
-    throw e;
+  };
+  if (age !== Infinity) {
+    try {
+      const cached = fromCache();
+      if (age >= ADBLOCK_MAX_AGE_MS) download().catch(() => {});
+      return cached;
+    } catch (e) {
+      /* corrupt cache: download below */
+    }
   }
+  return download();
 }
 
 // Built once; every caller shares the same promise, so overlapping clicks
@@ -143,9 +146,24 @@ function adblockStatus() {
   return { on: blockerOn, wanted: blockerWanted, error: blockerError };
 }
 
+// YouTube-specific layer (tile-preload.js): strips ad slots from the player
+// data before the player reads it. Applies to pages loaded after the switch.
+const AD_FIX = !process.env.TW_NO_YT_ADFIX;
+let shieldId = null;
+function setYtShield(on) {
+  const ses = session.fromPartition(PARTITION);
+  if (on && AD_FIX && !shieldId) {
+    shieldId = ses.registerPreloadScript({ type: 'frame', id: 'tilewall-yt-shield', filePath: path.join(__dirname, 'tile-preload.js') });
+  } else if (!on && shieldId) {
+    ses.unregisterPreloadScript(shieldId);
+    shieldId = null;
+  }
+}
+
 async function setAdblock(on) {
   const ses = session.fromPartition(PARTITION);
   blockerWanted = !!on;
+  setYtShield(blockerWanted);
   try {
     if (on) {
       const b = await getBlocker();
@@ -341,7 +359,7 @@ function createWindow() {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { adfix: AD_FIX ? '1' : '0' } });
   startPointerPoll();
 }
 

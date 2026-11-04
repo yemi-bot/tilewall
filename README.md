@@ -6,7 +6,7 @@ Works with YouTube (videos, live streams, channel `/live` links), Twitch, Kick, 
 
 ## Run it
 
-- Double-click **Tilewall** on the desktop or in the Start menu (it points at `dist\Tilewall-win32-x64\Tilewall.exe`).
+- Double-click **Tilewall** on the desktop or in the Start menu. The shortcuts always point at the newest build (its path is in `dist\LATEST.txt`).
 - Or from this folder: `npm start`.
 
 ## Use it
@@ -34,7 +34,10 @@ Works with YouTube (videos, live streams, channel `/live` links), Twitch, Kick, 
 ## Notes
 
 - One tile plays sound at a time. The others keep playing, muted.
-- Ad blocking uses the Ghostery engine with its built-in lists. It is on by default and can be turned off from the toolbar.
+- Ad blocking is on by default, and the shield button in the toolbar turns it off. It has three layers:
+  - YouTube: ad slots are removed from the player data before YouTube's player reads it (`tile-preload.js`).
+  - YouTube backup: if an ad still starts, Skip is pressed for you, or the ad jumps to its end.
+  - Everything else: the Ghostery engine with its built-in lists. A cached copy loads instantly, and lists older than 3 days refresh in the background. If the lists arrive after the tiles loaded (first launch), the tiles reload once.
 - You can sign in to YouTube or Twitch inside a tile. Logins are shared by all tiles and kept between runs.
 - Links that try to open new windows are blocked. Use right-click, then "Open link in your browser".
 - If YouTube shows "Continue watching?", Tilewall answers it for you.
@@ -45,10 +48,11 @@ Works with YouTube (videos, live streams, channel `/live` links), Twitch, Kick, 
 npm install
 npm test              # unit tests: layout, link cleanup, hotkeys
 npm run smoke         # launches the app off-screen, loads 4 streams, saves screenshots
-npm run package       # builds dist\Tilewall-win32-x64\Tilewall.exe
+npm run package       # builds dist\build-<stamp>\Tilewall-win32-x64\Tilewall.exe, repoints the shortcuts
+node scripts/ad-check.js 45   # YouTube ad time with and without the YouTube layer
 ```
 
-Set `TW_EXE=dist\Tilewall-win32-x64\Tilewall.exe` before `npm run smoke` to test the packaged build.
+Set `TW_EXE` to the path in `dist\LATEST.txt` before `npm run smoke` to test the packaged build. Each build gets its own folder, so it never collides with a running copy. Older builds are removed once nothing uses them.
 
 If `npm start` does nothing from a VS Code terminal, clear `ELECTRON_RUN_AS_NODE` first. Some editor shells set it, and it makes Electron run as plain Node.
 
@@ -58,6 +62,7 @@ If `npm start` does nothing from a VS Code terminal, clear `ELECTRON_RUN_AS_NODE
 | --- | --- |
 | `main.js` | Window, saved state, hotkey filter, cursor tracking, ad blocking, tile lockdown |
 | `hotkeys.js` | Which key combos are app shortcuts |
+| `tile-preload.js` | YouTube ad layer, runs in each tile before the page's own scripts |
 | `preload.js` | The small bridge the app page uses to talk to `main.js` |
 | `renderer/app.js` | Tiles, layouts, audio, toolbar, hover bars, drag to swap |
 | `renderer/fill.js` | The script and CSS injected into each tile to make its player fill the tile |

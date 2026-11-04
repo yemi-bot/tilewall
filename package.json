@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/layout.test.js test/urls.test.js test/hotkeys.test.js",
+    "test": "node --test test/layout.test.js test/urls.test.js test/hotkeys.test.js test/yt-shield.test.js",
     "smoke": "node scripts/smoke.js",
     "package": "node scripts/package.js"
   },
