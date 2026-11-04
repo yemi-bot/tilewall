@@ -156,6 +156,14 @@ function launch(userData) {
   await page.waitForTimeout(300);
   expect('Ctrl+2 inside a tile is caught', blocked, true);
   expect('Ctrl+2 hears tile 2', await audioTileIndex(), 1);
+  // ...and moves keyboard focus into tile 2, so YouTube's F/space/arrows act on it.
+  const tile2Wc = await page.evaluate(() => window.__tilewall.recs.get(window.__tilewall.state.tiles[1].id).wv.getWebContentsId());
+  expect('Ctrl+2 gives tile 2 keyboard focus (main)', await app.evaluate(() => global.__twLastFocusedTile), tile2Wc);
+  expect(
+    'Ctrl+2 gives tile 2 keyboard focus (page)',
+    await page.evaluate(() => document.activeElement === window.__tilewall.recs.get(window.__tilewall.state.tiles[1].id).wv),
+    true
+  );
   await page.evaluate(() => window.__tilewall.onHotkey('audio:3'));
   await page.waitForTimeout(300);
   const audio = await audioReport();

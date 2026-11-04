@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, session, shell, Menu, clipboard, screen, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, session, shell, Menu, clipboard, screen, nativeTheme, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { hotkeyFor } = require('./hotkeys');
@@ -36,6 +36,7 @@ let blockerPromise = null;
 let blockerOn = false;
 let blockerWanted = false;
 let blockerError = null;
+
 
 // ---------- saved state ----------
 
@@ -383,6 +384,13 @@ ipcMain.handle('adblock:set', (_e, on) => setAdblock(!!on));
 ipcMain.handle('adblock:status', () => adblockStatus());
 ipcMain.handle('win:is-fullscreen', () => !!(win && win.isFullScreen()));
 ipcMain.on('win:fullscreen', () => toggleFullscreen());
+// Give keyboard focus to one of this window's tiles.
+ipcMain.on('tile:focus', (_e, id) => {
+  const wc = webContents.fromId(id);
+  if (!wc || wc.isDestroyed() || wc.getType() !== 'webview' || !win || wc.hostWebContents !== win.webContents) return;
+  global.__twLastFocusedTile = id; // read by the smoke test
+  wc.focus();
+});
 ipcMain.on('open-external', (_e, url) => {
   if (isWebUrl(url)) shell.openExternal(url);
 });

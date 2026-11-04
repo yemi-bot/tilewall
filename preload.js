@@ -17,4 +17,5 @@ contextBridge.exposeInMainWorld('tw', {
   onPointer: (cb) => ipcRenderer.on('pointer', (_e, p) => cb(p)),
   onFullscreen: (cb) => ipcRenderer.on('fullscreen', (_e, on) => cb(!!on)),
   onAdblock: (cb) => ipcRenderer.on('adblock', (_e, s) => cb(s)),
+  focusTile: (id) => ipcRenderer.send('tile:focus', Number(id)),
 });

@@ -345,7 +345,10 @@
         break;
       case 'audio':
         if (state.audioId === t.id && !state.muteAll) setMuteAll(true);
-        else setAudio(t.id);
+        else {
+          setAudio(t.id);
+          focusTile(t.id);
+        }
         break;
       case 'main':
         state.mainId = t.id;
@@ -518,6 +521,19 @@
   function applyAudio() {
     for (const rec of recs.values()) applyAudioTo(rec);
     syncDock();
+  }
+
+  // Keys like YouTube's F (fullscreen), space and arrows go to the tile with
+  // keyboard focus, so picking a tile moves focus into it.
+  function focusTile(id) {
+    const rec = recs.get(id);
+    if (!rec || !rec.attached) return;
+    try {
+      rec.wv.focus();
+      tw.focusTile(rec.wv.getWebContentsId());
+    } catch (e) {
+      /* tile not ready */
+    }
   }
 
   function flash(id) {
@@ -897,7 +913,10 @@
   function onHotkey(k) {
     if (k.indexOf('audio:') === 0) {
       const t = state.tiles[Number(k.slice(6)) - 1];
-      if (t) setAudio(t.id, { alsoMain: true });
+      if (t) {
+        setAudio(t.id, { alsoMain: true });
+        focusTile(t.id);
+      }
       return;
     }
     switch (k) {
