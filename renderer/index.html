@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https: http:">
+  <title>Tilewall</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="stage" aria-label="Tiles"></main>
+
+  <section id="empty" hidden>
+    <div class="empty-card">
+      <h1>Tilewall</h1>
+      <p class="lede">Paste one or more links. Each one gets its own tile, and its video fills the tile like it is fullscreen.</p>
+      <form id="empty-form" class="empty-form">
+        <textarea id="empty-input" class="field" rows="3" spellcheck="false" aria-label="Links to add"
+          placeholder="youtube.com/watch?v=...&#10;twitch.tv/name&#10;kick.com/name"></textarea>
+        <div class="empty-actions">
+          <span class="hint">Enter to add. Shift+Enter for a new line.</span>
+          <button class="btn primary" type="submit">Add tiles</button>
+        </div>
+      </form>
+      <ul class="tips">
+        <li><kbd>Ctrl</kbd> <kbd>1</kbd>-<kbd>9</kbd> picks which tile you hear</li>
+        <li>Hover the <b>top edge of a tile</b> for its controls. Hover the <b>bottom edge of the window</b> for the toolbar.</li>
+        <li><kbd>F11</kbd> fullscreen. <kbd>F1</kbd> all shortcuts.</li>
+      </ul>
+    </div>
+  </section>
+
+  <div id="dock-hot" aria-hidden="true"></div>
+  <div id="dock" role="toolbar" aria-label="Tilewall toolbar">
+    <form id="add-form" class="dock-group">
+      <input id="add-input" class="field" type="text" spellcheck="false" autocomplete="off"
+        placeholder="Paste links to add tiles" aria-label="Links to add">
+      <button class="btn primary" type="submit">Add</button>
+    </form>
+    <span class="dock-sep" aria-hidden="true"></span>
+    <div class="dock-group" role="group" aria-label="Layout">
+      <button class="db" type="button" data-layout="grid" title="Grid (Ctrl+L)" aria-label="Grid layout"></button>
+      <button class="db" type="button" data-layout="focus" title="One big tile, the rest small (Ctrl+L)" aria-label="Focus layout"></button>
+      <button class="db" type="button" data-layout="solo" title="One tile only (Ctrl+F)" aria-label="Solo layout"></button>
+    </div>
+    <span class="dock-sep" aria-hidden="true"></span>
+    <div class="dock-group">
+      <button class="db" type="button" id="btn-mute" title="Mute all (Ctrl+M)" aria-label="Mute all"></button>
+      <button class="db" type="button" id="btn-follow" title="Sound follows your mouse (Ctrl+Shift+M)" aria-label="Sound follows your mouse"></button>
+    </div>
+    <span class="dock-sep" aria-hidden="true"></span>
+    <div class="dock-group">
+      <button class="db" type="button" id="btn-gap" title="Space between tiles" aria-label="Space between tiles"></button>
+      <button class="db" type="button" id="btn-adblock" title="Block ads" aria-label="Block ads"></button>
+      <button class="db" type="button" id="btn-clean" title="Hide all controls (Ctrl+H)" aria-label="Hide all controls"></button>
+      <button class="db" type="button" id="btn-full" title="Fullscreen (F11)" aria-label="Fullscreen"></button>
+      <button class="db" type="button" id="btn-help" title="Shortcuts (F1)" aria-label="Shortcuts"></button>
+    </div>
+  </div>
+
+  <div id="help" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="modal-head">
+        <h2 id="help-title">Shortcuts</h2>
+        <button class="db" type="button" id="help-close" aria-label="Close"></button>
+      </div>
+      <dl class="keys">
+        <dt><kbd>Ctrl</kbd> <kbd>N</kbd></dt><dd>Add links</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>1</kbd>-<kbd>9</kbd></dt><dd>Hear tile 1-9 (it also becomes the big tile in Focus and Solo)</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>M</kbd> or <kbd>Ctrl</kbd> <kbd>0</kbd></dt><dd>Mute all / unmute</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>M</kbd></dt><dd>Sound follows your mouse</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>L</kbd></dt><dd>Switch layout: Grid, Focus, Solo</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>F</kbd></dt><dd>Show one tile only, press again to go back</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>H</kbd></dt><dd>Hide all controls for a clean wall</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>R</kbd></dt><dd>Reload the tile you are hearing (<kbd>Shift</kbd> reloads all)</dd>
+        <dt><kbd>F11</kbd></dt><dd>Fullscreen</dd>
+        <dt>Hold <kbd>Ctrl</kbd></dt><dd>Show tile numbers</dd>
+      </dl>
+      <p class="modal-foot">Hover the top edge of a tile for its controls. Drag the dots to move a tile. Right-click inside a tile for back, reload and open in your browser.</p>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite"><span id="toast-text"></span><button type="button" id="toast-action" hidden></button></div>
+  <div id="drag-shield" hidden></div>
+
+  <script src="layout.js"></script>
+  <script src="urls.js"></script>
+  <script src="fill.js"></script>
+  <script src="icons.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

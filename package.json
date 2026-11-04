@@ -1,0 +1,22 @@
+{
+  "name": "tilewall",
+  "productName": "Tilewall",
+  "version": "0.1.0",
+  "description": "Watch several streams or pages at once, each filling its own tile like it is fullscreen.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/layout.test.js test/urls.test.js test/hotkeys.test.js",
+    "smoke": "node scripts/smoke.js",
+    "package": "node scripts/package.js"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "2.20.1"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.9.3",
+    "playwright-core": "1.64.1"
+  }
+}
