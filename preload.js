@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('tw', {
   loadState: () => ipcRenderer.invoke('state:load'),
   saveState: (data) => ipcRenderer.send('state:save', data),
+  saveStateNow: (data) => ipcRenderer.sendSync('state:save-now', data),
   setAdblock: (on) => ipcRenderer.invoke('adblock:set', !!on),
   adblockStatus: () => ipcRenderer.invoke('adblock:status'),
   isFullscreen: () => ipcRenderer.invoke('win:is-fullscreen'),
@@ -15,4 +16,5 @@ contextBridge.exposeInMainWorld('tw', {
   onCtrl: (cb) => ipcRenderer.on('ctrl', (_e, down) => cb(!!down)),
   onPointer: (cb) => ipcRenderer.on('pointer', (_e, p) => cb(p)),
   onFullscreen: (cb) => ipcRenderer.on('fullscreen', (_e, on) => cb(!!on)),
+  onAdblock: (cb) => ipcRenderer.on('adblock', (_e, s) => cb(s)),
 });

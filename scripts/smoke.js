@@ -128,6 +128,14 @@ function launch(userData) {
   await pointer(vp.w / 2, vp.h / 2);
   await page.waitForTimeout(800);
   expect('toolbar hides after leaving', (await shown()).dock, false);
+  await pointer(vp.w / 2, vp.h - 3);
+  await page.waitForTimeout(400);
+  await page.click('#btn-gap');
+  await page.click('#btn-gap');
+  await page.click('#btn-gap');
+  await pointer(vp.w / 2, vp.h / 2);
+  await page.waitForTimeout(800);
+  expect('toolbar hides after clicking one of its buttons', (await shown()).dock, false);
   await pointer(10, 10);
   await pointer(-5, -5, false);
   await page.waitForTimeout(500);
@@ -162,7 +170,7 @@ function launch(userData) {
     );
   });
   expect('H.264 + AAC supported', codecs, { h264: true, aac: true });
-  expect('ad blocking on', await page.evaluate(() => window.tw.adblockStatus()), { on: true });
+  expect('ad blocking on', (await page.evaluate(() => window.tw.adblockStatus())).on, true);
 
   // A page asking for real fullscreen inside a tile.
   await page.evaluate(() => {
@@ -200,6 +208,49 @@ function launch(userData) {
   });
   await page.waitForTimeout(2500);
   await shot('07-page-mode-tile1');
+
+  // Review fixes. Undo while muted keeps everything muted.
+  await page.evaluate(() => window.__tilewall.onHotkey('muteall'));
+  await page.evaluate(() => {
+    const s = window.__tilewall.state;
+    window.__tilewall.recs.get(s.audioId).el.querySelector('[data-act="close"]').click();
+  });
+  await page.waitForTimeout(200);
+  await page.click('#toast-action');
+  await page.waitForTimeout(800);
+  expect('undo while muted stays muted', (await audioReport()).every((a) => a.muted), true);
+  expect('undo restores 4 tiles', await page.evaluate(() => window.__tilewall.state.tiles.length), 4);
+  await page.evaluate(() => window.__tilewall.onHotkey('muteall'));
+
+  // Focus layout: dropping a strip tile on the big tile makes it the big one.
+  await page.evaluate(() => window.__tilewall.setLayout('focus'));
+  await page.waitForTimeout(500);
+  const dragOk = await page.evaluate(async () => {
+    const { state, recs } = window.__tilewall;
+    const mainId = state.mainId;
+    const strip = state.tiles.find((t) => t.id !== mainId);
+    const src = recs.get(strip.id);
+    const dst = recs.get(mainId).rect;
+    src.el.querySelector('[data-act="drag"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    const shield = document.querySelector('#drag-shield');
+    shield.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: dst.x + dst.w / 2, clientY: dst.y + dst.h / 2 }));
+    shield.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return state.mainId === strip.id;
+  });
+  expect('focus drag onto big tile makes it big', dragOk, true);
+  await shot('09-focus-after-drag');
+  await page.evaluate(() => window.__tilewall.setLayout('grid'));
+
+  // A failed load shows the error card; loading a good page clears it.
+  await page.evaluate(() => window.__tilewall.addUrls('https://tilewall-no-such-host.invalid'));
+  await page.waitForTimeout(5000);
+  const badId = await page.evaluate(() => window.__tilewall.state.tiles[window.__tilewall.state.tiles.length - 1].id);
+  expect('bad link shows error card', await page.evaluate((id) => window.__tilewall.recs.get(id).status, badId), 'error');
+  await page.evaluate((id) => window.__tilewall.recs.get(id).wv.loadURL('https://example.com').catch(() => {}), badId);
+  await page.waitForTimeout(5000);
+  expect('good load clears error card', await page.evaluate((id) => window.__tilewall.recs.get(id).status, badId), null);
+  await page.evaluate((id) => window.__tilewall.recs.get(id).el.querySelector('[data-act="close"]').click(), badId);
+  await page.waitForTimeout(300);
 
   // Restart with the same profile: tiles, order, modes and audio come back.
   const before = await page.evaluate(() => JSON.stringify(window.__tilewall.state.tiles.map((t) => [t.url, t.mode])));

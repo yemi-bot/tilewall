@@ -49,7 +49,7 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
     const host = location.hostname.replace(/^(www\.|m\.)/, '');
     const isYT = /(^|\.)youtube\.com$/.test(host);
     const isTwitch = /(^|\.)twitch\.tv$/.test(host);
-    const st = { on: false, target: null, video: null, marked: [] };
+    const st = { on: false, target: null, video: null, marked: [], pickedArea: 0 };
 
     function watchable() {
       const p = location.pathname;
@@ -66,27 +66,47 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
       return r.width * r.height;
     }
 
-    // The biggest video on the page; on other sites a big iframe player also counts.
-    function pickMedia() {
+    function biggest(selector, skip) {
       let best = null;
       let bestA = 0;
-      document.querySelectorAll('video').forEach((v) => {
-        const a = area(v);
+      document.querySelectorAll(selector).forEach((el) => {
+        if (el === skip) return;
+        const a = area(el);
         if (a > bestA) {
-          best = v;
+          best = el;
           bestA = a;
         }
       });
-      if (!best && !isYT && !isTwitch) {
-        document.querySelectorAll('iframe').forEach((f) => {
-          const a = area(f);
-          if (a > bestA) {
-            best = f;
-            bestA = a;
-          }
-        });
-      }
       return best && bestA > 0 ? { el: best, a: bestA } : null;
+    }
+
+    // On sites without their own rule, only a real player counts: a video
+    // of 12% of the tile, or an iframe (embedded player) of 35%, so ad boxes
+    // and consent frames are never picked.
+    function bigEnough(pick) {
+      if (!pick) return false;
+      if (isYT || isTwitch) return true;
+      const r = pick.el.getBoundingClientRect();
+      const share = pick.a / Math.max(1, innerWidth * innerHeight);
+      if (pick.el.tagName === 'IFRAME') return share >= 0.35 && Math.min(r.width, r.height) >= 200;
+      return share >= 0.12 && Math.min(r.width, r.height) >= 120;
+    }
+
+    // The biggest video on the page; on other sites a big iframe player also counts.
+    function pickMedia() {
+      const v = biggest('video');
+      if (v || isYT || isTwitch) return v;
+      const f = biggest('iframe');
+      return bigEnough(f) ? f : null;
+    }
+
+    // A late-loading real player beats what was picked earlier (generic sites only).
+    function betterPick() {
+      if (isYT || isTwitch || !st.video) return null;
+      const v = biggest('video', st.video);
+      if (!bigEnough(v)) return null;
+      if (st.video.tagName === 'IFRAME') return v;
+      return v.a > st.pickedArea * 1.5 ? v : null;
     }
 
     // The player box around the video (so its controls come along).
@@ -114,6 +134,7 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
       st.marked = [];
       st.target = null;
       st.video = null;
+      st.pickedArea = 0;
       H.removeAttribute('data-tw-fill');
       H.removeAttribute('data-tw-yt');
     }
@@ -141,16 +162,16 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
         }
         return;
       }
-      if (intact()) return;
-      if (st.target) clear();
-      const pick = pickMedia();
-      if (!pick) return;
-      if (!isYT && !isTwitch) {
-        const r = pick.el.getBoundingClientRect();
-        const big = pick.a >= innerWidth * innerHeight * 0.12 && Math.min(r.width, r.height) >= 120;
-        if (!big) return;
+      let pick = null;
+      if (intact()) {
+        pick = betterPick();
+        if (!pick) return;
       }
+      if (st.target) clear();
+      pick = pick || pickMedia();
+      if (!bigEnough(pick)) return;
       st.video = pick.el;
+      st.pickedArea = pick.a;
       st.target = pick.el.tagName === 'IFRAME' ? pick.el : containerFor(pick.el);
       mark(st.target, 'data-tw-target');
       mark(st.video, 'data-tw-video');

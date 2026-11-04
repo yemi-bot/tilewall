@@ -8,6 +8,7 @@ const { hotkeyFor } = require('./hotkeys');
 const PARTITION = 'persist:tilewall';
 const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'clipboard-sanitized-write']);
 const ADBLOCK_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const isWebUrl = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
 
 // Test runs point userData at a throwaway folder so they never touch real state.
 if (process.env.TW_USER_DATA) app.setPath('userData', process.env.TW_USER_DATA);
@@ -24,14 +25,17 @@ if (TEST_OFFSCREEN) {
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.userAgentFallback = app.userAgentFallback.replace(/\s(Electron|tilewall)\/\S+/gi, '');
 
-if (!process.env.TW_USER_DATA && !app.requestSingleInstanceLock()) {
-  app.quit();
-}
+// A second launch just focuses the first one (see 'second-instance') and exits now.
+const GOT_LOCK = !!process.env.TW_USER_DATA || app.requestSingleInstanceLock();
+if (!GOT_LOCK) app.exit(0);
 
 let win = null;
 let pointerTimer = null;
 let blocker = null;
+let blockerPromise = null;
 let blockerOn = false;
+let blockerWanted = false;
+let blockerError = null;
 
 // ---------- saved state ----------
 
@@ -56,12 +60,14 @@ function writeStateNow() {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(tmp, JSON.stringify(saved, null, 2), 'utf8');
+    // Windows can briefly lock the file (antivirus, indexer); wait a moment between tries.
     for (let i = 0; i < 5; i++) {
       try {
         fs.renameSync(tmp, file);
         return;
       } catch (e) {
         if (i === 4) throw e;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60);
       }
     }
   } catch (e) {
@@ -85,37 +91,80 @@ function rememberWindow() {
 
 // ---------- ad blocking ----------
 
+// Fresh cache (under 3 days) loads instantly. Otherwise download the lists;
+// if that fails (offline), an old cache still beats no blocking at all.
+async function buildBlocker() {
+  const { ElectronBlocker } = require('@ghostery/adblocker-electron');
+  const cache = path.join(app.getPath('userData'), 'adblock-engine.bin');
+  let age = Infinity;
+  try {
+    age = Date.now() - fs.statSync(cache).mtimeMs;
+  } catch (e) {
+    /* no cache yet */
+  }
+  const fromCache = () => ElectronBlocker.deserialize(new Uint8Array(fs.readFileSync(cache)));
+  if (age < ADBLOCK_MAX_AGE_MS) {
+    try {
+      return fromCache();
+    } catch (e) {
+      /* corrupt cache: download below */
+    }
+  }
+  try {
+    const fresh = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch);
+    try {
+      fs.writeFileSync(cache, fresh.serialize());
+    } catch (e) {
+      /* cache is optional */
+    }
+    return fresh;
+  } catch (e) {
+    if (age !== Infinity) return fromCache();
+    throw e;
+  }
+}
+
+// Built once; every caller shares the same promise, so overlapping clicks
+// can never create two engines.
+function getBlocker() {
+  if (!blockerPromise) {
+    blockerPromise = buildBlocker().then(
+      (b) => (blocker = b),
+      (e) => {
+        blockerPromise = null;
+        throw e;
+      }
+    );
+  }
+  return blockerPromise;
+}
+
+function adblockStatus() {
+  return { on: blockerOn, wanted: blockerWanted, error: blockerError };
+}
+
 async function setAdblock(on) {
   const ses = session.fromPartition(PARTITION);
+  blockerWanted = !!on;
   try {
     if (on) {
-      if (!blocker) {
-        const { ElectronBlocker } = require('@ghostery/adblocker-electron');
-        const cache = path.join(app.getPath('userData'), 'adblock-engine.bin');
-        try {
-          if (Date.now() - fs.statSync(cache).mtimeMs > ADBLOCK_MAX_AGE_MS) fs.unlinkSync(cache);
-        } catch (e) {
-          /* no cache yet */
-        }
-        blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
-          path: cache,
-          read: fs.promises.readFile,
-          write: fs.promises.writeFile,
-        });
-      }
-      if (!blockerOn) {
-        blocker.enableBlockingInSession(ses);
+      const b = await getBlocker();
+      // the user may have switched it off while the lists were loading
+      if (blockerWanted && !blockerOn) {
+        b.enableBlockingInSession(ses);
         blockerOn = true;
       }
     } else if (blocker && blockerOn) {
       blocker.disableBlockingInSession(ses);
       blockerOn = false;
     }
-    return { ok: true, on: blockerOn };
+    blockerError = null;
   } catch (e) {
-    console.error('[tilewall] ad block failed:', e.message);
-    return { ok: false, on: blockerOn, error: String(e.message || e) };
+    blockerError = String(e.message || e);
+    console.error('[tilewall] ad block failed:', blockerError);
   }
+  sendToApp('adblock', adblockStatus());
+  return { ok: !blockerError, ...adblockStatus() };
 }
 
 function withTimeout(promise, ms) {
@@ -138,7 +187,7 @@ function guestContextMenu(wc, p) {
   const items = [];
   if (p.linkURL && /^https?:/i.test(p.linkURL)) {
     items.push(
-      { label: 'Open link in this tile', click: () => wc.loadURL(p.linkURL) },
+      { label: 'Open link in this tile', click: () => wc.loadURL(p.linkURL).catch(() => {}) },
       { label: 'Open link in your browser', click: () => shell.openExternal(p.linkURL) },
       { label: 'Copy link', click: () => clipboard.writeText(p.linkURL) },
       { type: 'separator' }
@@ -155,7 +204,7 @@ function guestContextMenu(wc, p) {
     { label: 'Forward', enabled: nav.canGoForward(), click: () => nav.goForward() },
     { label: 'Reload', click: () => wc.reload() },
     { type: 'separator' },
-    { label: 'Open page in your browser', click: () => shell.openExternal(wc.getURL()) },
+    { label: 'Open page in your browser', enabled: isWebUrl(wc.getURL()), click: () => shell.openExternal(wc.getURL()) },
     { label: 'Copy page link', click: () => clipboard.writeText(wc.getURL()) }
   );
   Menu.buildFromTemplate(items).popup({ window: win });
@@ -181,6 +230,10 @@ app.on('web-contents-created', (_e, wc) => {
     // Popups would steal a tile or spam the browser. Links open through the right-click menu.
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.on('context-menu', (_ev, params) => guestContextMenu(wc, params));
+    // Tiles stay on the web (no file:// from a file dropped onto a tile).
+    wc.on('will-navigate', (ev, url) => {
+      if (!isWebUrl(url) && url !== 'about:blank') ev.preventDefault();
+    });
   }
 });
 
@@ -301,12 +354,19 @@ ipcMain.on('state:save', (_e, data) => {
     scheduleSave();
   }
 });
+// Sent while the app page unloads (window closing), so the last change is never lost.
+ipcMain.on('state:save-now', (e, data) => {
+  if (data && typeof data === 'object') saved.app = data;
+  rememberWindow();
+  writeStateNow();
+  e.returnValue = true;
+});
 ipcMain.handle('adblock:set', (_e, on) => setAdblock(!!on));
-ipcMain.handle('adblock:status', () => ({ on: blockerOn }));
+ipcMain.handle('adblock:status', () => adblockStatus());
 ipcMain.handle('win:is-fullscreen', () => !!(win && win.isFullScreen()));
 ipcMain.on('win:fullscreen', () => toggleFullscreen());
 ipcMain.on('open-external', (_e, url) => {
-  if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
+  if (isWebUrl(url)) shell.openExternal(url);
 });
 
 // ---------- startup ----------
@@ -317,19 +377,22 @@ app.on('second-instance', () => {
   win.focus();
 });
 
-app.whenReady().then(async () => {
-  // Sites that follow the system theme (YouTube, Twitch) render dark, so no white flashes.
-  nativeTheme.themeSource = 'dark';
-  const ses = session.fromPartition(PARTITION);
-  ses.setUserAgent(app.userAgentFallback);
-  ses.setPermissionRequestHandler((_wc, permission, cb) => cb(ALLOWED_PERMISSIONS.has(permission)));
+if (GOT_LOCK) {
+  app.whenReady().then(async () => {
+    // Sites that follow the system theme (YouTube, Twitch) render dark, so no white flashes.
+    nativeTheme.themeSource = 'dark';
+    const ses = session.fromPartition(PARTITION);
+    ses.setUserAgent(app.userAgentFallback);
+    ses.setPermissionRequestHandler((_wc, permission, cb) => cb(ALLOWED_PERMISSIONS.has(permission)));
 
-  // Start blocking before any tile loads, but never hold the window up for long.
-  const wantAdblock = !saved.app || saved.app.adblock !== false;
-  if (wantAdblock) await withTimeout(setAdblock(true), 6000);
+    // Start blocking before any tile loads, but never hold the window up for long.
+    // If the lists are slow, blocking switches on when they arrive and the app is told.
+    const wantAdblock = !saved.app || saved.app.adblock !== false;
+    if (wantAdblock) await withTimeout(setAdblock(true), 6000);
 
-  createWindow();
-});
+    createWindow();
+  });
+}
 
 app.on('before-quit', () => {
   rememberWindow();

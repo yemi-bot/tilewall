@@ -49,23 +49,38 @@
   // ---------- saving ----------
 
   let saveTimer = null;
+  let started = false;
+
+  function snapshot() {
+    return {
+      tiles: state.tiles.map(({ id, url, mode, title }) => ({ id, url, mode, title })),
+      layout: state.layout,
+      prevLayout: state.prevLayout,
+      mainId: state.mainId,
+      audioId: state.audioId,
+      muteAll: state.muteAll,
+      gap: state.gap,
+      followMouse: state.followMouse,
+      adblock: state.adblock,
+      clean: state.clean,
+    };
+  }
+
   function scheduleSave() {
+    if (!started) return; // never overwrite the saved file before it has been read
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      tw.saveState({
-        tiles: state.tiles.map(({ id, url, mode, title }) => ({ id, url, mode, title })),
-        layout: state.layout,
-        prevLayout: state.prevLayout,
-        mainId: state.mainId,
-        audioId: state.audioId,
-        muteAll: state.muteAll,
-        gap: state.gap,
-        followMouse: state.followMouse,
-        adblock: state.adblock,
-        clean: state.clean,
-      });
+      saveTimer = null;
+      tw.saveState(snapshot());
     }, 250);
   }
+
+  // Closing the window: write the latest state right now, not 250 ms from now.
+  window.addEventListener('beforeunload', () => {
+    if (!started) return;
+    clearTimeout(saveTimer);
+    tw.saveStateNow(snapshot());
+  });
 
   function restore(data) {
     if (!data || typeof data !== 'object') return;
@@ -154,7 +169,7 @@
     wv.setAttribute('src', t.url);
     el.prepend(wv);
 
-    const rec = { t, el, wv, ready: false, firstLoadDone: false, rect: null, barTimer: null, status: null };
+    const rec = { t, el, wv, ready: false, attached: false, firstLoadDone: false, rect: null, barTimer: null, status: null };
     wireTile(rec);
     updateTitle(rec);
     updateModeBtn(rec);
@@ -196,6 +211,7 @@
 
   function onReady(rec) {
     rec.ready = true;
+    rec.attached = true; // webview methods work from the first dom-ready on, even after a crash
     rec.wv.insertCSS(FILL.css).catch(() => {});
     applyFill(rec);
     applyAudioTo(rec);
@@ -207,6 +223,10 @@
 
     wv.addEventListener('did-start-loading', () => {
       if (!rec.firstLoadDone && rec.status !== 'error') setStatus(rec, 'loading', 'Loading ' + hostOf(t.url));
+    });
+    // Any new page load (Ctrl+R, right-click Reload, a new link) clears an error card.
+    wv.addEventListener('did-start-navigation', (e) => {
+      if (e.isMainFrame && !e.isInPlace && rec.status === 'error') setStatus(rec, 'loading', 'Loading ' + hostOf(e.url || t.url));
     });
     wv.addEventListener('dom-ready', () => onReady(rec));
     wv.addEventListener('did-stop-loading', () => {
@@ -311,7 +331,7 @@
   }
 
   function navigate(rec, url) {
-    if (rec.ready) rec.wv.loadURL(url).catch(() => {});
+    if (rec.attached) rec.wv.loadURL(url).catch(() => {});
     else rec.wv.setAttribute('src', url);
   }
 
@@ -340,7 +360,7 @@
         break;
       case 'back':
         try {
-          if (rec.ready && rec.wv.canGoBack()) rec.wv.goBack();
+          if (rec.attached && rec.wv.canGoBack()) rec.wv.goBack();
         } catch (e) {
           /* not ready */
         }
@@ -349,7 +369,7 @@
         reloadTile(t.id);
         break;
       case 'external':
-        tw.openExternal(rec.ready ? rec.wv.getURL() : t.url);
+        tw.openExternal(rec.attached ? rec.wv.getURL() : t.url);
         break;
       case 'close':
         removeTile(t.id);
@@ -399,12 +419,13 @@
     toast('Removed ' + (t.title || hostOf(t.url)) + '.', {
       label: 'Undo',
       run: () => {
+        if (recs.has(t.id)) return; // already restored
         addTile({ ...t }, Math.min(i, state.tiles.length));
-        if (hadAudio) setAudio(t.id, { quiet: true });
-        if (wasMain) {
-          state.mainId = t.id;
-          refresh();
-        }
+        // give back the sound slot without unmuting if everything is muted
+        if (hadAudio) state.audioId = t.id;
+        if (wasMain) state.mainId = t.id;
+        refresh();
+        if (hadAudio && !state.muteAll) flash(t.id);
       },
     });
   }
@@ -412,7 +433,7 @@
   function reloadTile(id) {
     const rec = recs.get(id);
     if (!rec) return;
-    if (rec.ready) rec.wv.reload();
+    if (rec.attached) rec.wv.reload();
     else navigate(rec, rec.t.url);
   }
 
@@ -483,7 +504,7 @@
     const btn = $('[data-act="audio"]', rec.el);
     btn.classList.toggle('on', !muted);
     btn.title = muted ? 'Hear this tile' : 'You are hearing this tile. Click to mute.';
-    if (rec.ready) {
+    if (rec.attached) {
       try {
         rec.wv.setAudioMuted(muted);
       } catch (e) {
@@ -545,9 +566,20 @@
   let followSince = 0;
   let followTimer = null;
 
+  function overControls(p) {
+    if (!help.hidden || !empty.hidden) return true;
+    if (dock.classList.contains('show')) {
+      const r = dock.getBoundingClientRect();
+      if (p.x >= r.left - 12 && p.x < r.right + 12 && p.y >= r.top - 12 && p.y < r.bottom + 12) return true;
+    }
+    const over = tileAt(p.x, p.y);
+    const rec = over && recs.get(over);
+    return !!(rec && rec.el.classList.contains('bar-show') && p.y < rec.rect.y + BAR_H);
+  }
+
   function followCheck(p) {
     clearTimeout(followTimer);
-    if (!state.followMouse || drag || state.muteAll || !p.inside || !p.focused) {
+    if (!state.followMouse || drag || state.muteAll || !p.inside || !p.focused || overControls(p)) {
       followCand = null;
       return;
     }
@@ -632,6 +664,12 @@
         const tmp = state.tiles[a];
         state.tiles[a] = state.tiles[b];
         state.tiles[b] = tmp;
+        // In Focus the big spot follows the drop: a strip tile dropped on the
+        // big one becomes big, and the big one dropped on the strip shrinks.
+        if (state.layout === 'focus') {
+          if (state.mainId === overId) state.mainId = id;
+          else if (state.mainId === id) state.mainId = overId;
+        }
         relayout();
         scheduleSave();
       }
@@ -659,7 +697,8 @@
   }
 
   function hideDockSoon() {
-    if (dockTimer || !dock.classList.contains('show') || dockPinned || dock.contains(document.activeElement)) return;
+    // only typing in the link field holds it open; a clicked button keeps focus but must not
+    if (dockTimer || !dock.classList.contains('show') || dockPinned || document.activeElement === addInput) return;
     dockTimer = setTimeout(() => {
       dockTimer = null;
       dock.classList.remove('show');
@@ -725,6 +764,7 @@
   $('#help-close').innerHTML = ICON.close;
 
   let isFull = false;
+  let adblockLive = { on: false, error: null };
 
   function syncDock() {
     dock.querySelectorAll('[data-layout]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.layout === state.layout)));
@@ -735,7 +775,10 @@
     btnFollow.title = state.followMouse ? 'Sound follows your mouse: on (Ctrl+Shift+M)' : 'Sound follows your mouse: off (Ctrl+Shift+M)';
     btnGap.title = 'Space between tiles: ' + state.gap + 'px';
     btnAdblock.setAttribute('aria-pressed', String(state.adblock));
-    btnAdblock.title = state.adblock ? 'Ad blocking: on' : 'Ad blocking: off';
+    btnAdblock.title = !state.adblock ? 'Ad blocking: off'
+      : adblockLive.on ? 'Ad blocking: on'
+      : adblockLive.error ? 'Ad blocking: could not load the block list (' + adblockLive.error + ')'
+      : 'Ad blocking: starting...';
     btnClean.setAttribute('aria-pressed', String(state.clean));
     btnFull.setAttribute('aria-pressed', String(isFull));
     document.body.classList.toggle('clean', state.clean);
@@ -753,14 +796,26 @@
     toast('Space between tiles: ' + state.gap + 'px');
     scheduleSave();
   });
+  // state.adblock is what you chose (saved). adblockLive is what main reports
+  // right now: the block list can still be loading, or fail when offline.
   btnAdblock.addEventListener('click', async () => {
-    const r = await tw.setAdblock(!state.adblock);
-    state.adblock = !!r.on;
+    state.adblock = !state.adblock;
     syncDock();
     scheduleSave();
-    if (!r.ok) toast('Ad blocking could not start: ' + (r.error || 'unknown error'));
+    const r = await tw.setAdblock(state.adblock);
+    adblockLive = r;
+    syncDock();
+    if (!r.ok) toast('Ad blocking could not start: ' + (r.error || 'unknown error') + '. It will try again next launch.');
     else if (state.adblock) toast('Ad blocking on. Reload tiles to apply.', { label: 'Reload all', run: reloadAll });
     else toast('Ad blocking off.', { label: 'Reload all', run: reloadAll });
+  });
+  tw.onAdblock((s) => {
+    const wasOn = adblockLive.on;
+    adblockLive = s;
+    syncDock();
+    if (state.adblock && s.on && !wasOn && started && state.tiles.length) {
+      toast('Ad blocking is ready.', { label: 'Reload all', run: reloadAll });
+    }
   });
   btnClean.addEventListener('click', () => toggleClean());
   btnFull.addEventListener('click', () => tw.toggleFullscreen());
@@ -900,8 +955,7 @@
 
   async function start() {
     restore(await tw.loadState());
-    const ab = await tw.adblockStatus();
-    if (state.adblock && !ab.on) state.adblock = false;
+    adblockLive = await tw.adblockStatus();
     isFull = await tw.isFullscreen();
     for (const t of state.tiles) {
       const rec = buildTile(t);
@@ -913,6 +967,7 @@
     if (!state.tiles.length) emptyInput.focus();
     relayout();
     applyAudio();
+    started = true;
   }
 
   // Handy for debugging from DevTools (Ctrl+Shift+I) and for the smoke test.
