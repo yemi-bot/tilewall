@@ -42,3 +42,31 @@ test('alt combos and key-up events are ignored', () => {
   assert.equal(hotkeyFor(key({ key: '2', code: 'Digit2', control: true, alt: true })), null);
   assert.equal(hotkeyFor({ ...key({ key: '2', code: 'Digit2', control: true }), type: 'keyUp' }), null);
 });
+
+const { forwardKeyCode, isPrintable } = require('../hotkeys.js');
+
+test('player keys can be handed to the picked tile', () => {
+  assert.equal(forwardKeyCode(key({ key: 'f', code: 'KeyF' })), 'f');
+  assert.equal(forwardKeyCode(key({ key: 'F', code: 'KeyF', shift: true })), 'F');
+  assert.equal(forwardKeyCode(key({ key: ' ', code: 'Space' })), 'Space');
+  assert.equal(forwardKeyCode(key({ key: 'ArrowLeft', code: 'ArrowLeft' })), 'Left');
+  assert.equal(forwardKeyCode(key({ key: 'Escape', code: 'Escape' })), 'Escape');
+  assert.equal(forwardKeyCode(key({ key: '>', code: 'Period', shift: true })), '>');
+  assert.equal(forwardKeyCode({ ...key({ key: 'k', code: 'KeyK' }), type: 'keyUp' }), 'k');
+});
+
+test('combos and odd keys stay where they are', () => {
+  assert.equal(forwardKeyCode(key({ key: 'c', code: 'KeyC', control: true })), null);
+  assert.equal(forwardKeyCode(key({ key: 'f', code: 'KeyF', alt: true })), null);
+  assert.equal(forwardKeyCode(key({ key: 'Shift', code: 'ShiftLeft', shift: true })), null);
+  assert.equal(forwardKeyCode(key({ key: 'F5', code: 'F5' })), null);
+  assert.equal(forwardKeyCode(key({ key: 'Dead', code: 'Quote' })), null);
+  assert.equal(forwardKeyCode({ type: 'char', key: 'f' }), null);
+});
+
+test('printable keys also need a character event', () => {
+  assert.equal(isPrintable('f'), true);
+  assert.equal(isPrintable('Space'), true);
+  assert.equal(isPrintable('Left'), false);
+  assert.equal(isPrintable('Escape'), false);
+});

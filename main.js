@@ -3,7 +3,7 @@
 const { app, BrowserWindow, ipcMain, session, shell, Menu, clipboard, screen, nativeTheme, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { hotkeyFor } = require('./hotkeys');
+const { hotkeyFor, forwardKeyCode, isPrintable } = require('./hotkeys');
 
 const PARTITION = 'persist:tilewall';
 const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'clipboard-sanitized-write']);
@@ -229,6 +229,40 @@ function guestContextMenu(wc, p) {
   Menu.buildFromTemplate(items).popup({ window: win });
 }
 
+// ---------- picked tile for keys ----------
+// Real keys go to whichever tile Chromium thinks has focus (the one clicked
+// last), and code cannot reliably move that focus between tiles. So Tilewall
+// keeps its own picked tile: Ctrl+1-9 picks one, a click inside a tile picks
+// that one, and player keys (F, space, arrows...) that land in another tile
+// are handed to the picked tile.
+
+let keyTargetId = null;
+
+function liveTile(id) {
+  if (id == null || !win || win.isDestroyed()) return null;
+  const wc = webContents.fromId(id);
+  if (!wc || wc.isDestroyed() || wc.getType() !== 'webview' || wc.hostWebContents !== win.webContents) return null;
+  return wc;
+}
+
+function forwardKey(fromWc, input) {
+  if (fromWc.getType() !== 'webview' || keyTargetId === fromWc.id) return false;
+  const code = forwardKeyCode(input);
+  if (!code) return false;
+  const target = liveTile(keyTargetId);
+  if (!target) return false;
+  const modifiers = input.shift ? ['shift'] : [];
+  if (input.type === 'keyDown') {
+    target.sendInputEvent({ type: 'keyDown', keyCode: code, modifiers });
+    if (isPrintable(code)) target.sendInputEvent({ type: 'char', keyCode: code, modifiers });
+  } else {
+    target.sendInputEvent({ type: 'keyUp', keyCode: code, modifiers });
+  }
+  return true;
+}
+
+global.__twKeyTarget = () => keyTargetId; // read by the smoke test
+
 app.on('web-contents-created', (_e, wc) => {
   wc.on('before-input-event', (event, input) => {
     if (input.key === 'Control' && !input.isAutoRepeat) {
@@ -236,7 +270,10 @@ app.on('web-contents-created', (_e, wc) => {
       return;
     }
     const hk = hotkeyFor(input);
-    if (!hk) return;
+    if (!hk) {
+      if (forwardKey(wc, input)) event.preventDefault();
+      return;
+    }
     event.preventDefault();
     if (hk === 'fullscreen') return toggleFullscreen();
     if (hk === 'devtools') return win && win.webContents.toggleDevTools();
@@ -249,6 +286,10 @@ app.on('web-contents-created', (_e, wc) => {
     // Popups would steal a tile or spam the browser. Links open through the right-click menu.
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.on('context-menu', (_ev, params) => guestContextMenu(wc, params));
+    // Clicking inside a tile picks it for keys, like a normal click would.
+    wc.on('before-mouse-event', (_ev, mouse) => {
+      if (mouse.type === 'mouseDown') keyTargetId = wc.id;
+    });
     // Tiles stay on the web (no file:// from a file dropped onto a tile).
     wc.on('will-navigate', (ev, url) => {
       if (!isWebUrl(url) && url !== 'about:blank') ev.preventDefault();
@@ -316,7 +357,7 @@ function createWindow() {
     opts.y = 0;
     opts.width = 1600;
     opts.height = 900;
-    opts.focusable = false;
+    opts.focusable = !!process.env.TW_TEST_FOCUSABLE; // focusable only for key-routing tests; still never activated
   } else if (visibleOnSomeDisplay(b)) {
     opts.x = b.x;
     opts.y = b.y;
@@ -388,7 +429,7 @@ ipcMain.on('win:fullscreen', () => toggleFullscreen());
 ipcMain.on('tile:focus', (_e, id) => {
   const wc = webContents.fromId(id);
   if (!wc || wc.isDestroyed() || wc.getType() !== 'webview' || !win || wc.hostWebContents !== win.webContents) return;
-  global.__twLastFocusedTile = id; // read by the smoke test
+  keyTargetId = id;
   wc.focus();
 });
 ipcMain.on('open-external', (_e, url) => {

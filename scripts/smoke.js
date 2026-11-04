@@ -158,7 +158,32 @@ function launch(userData) {
   expect('Ctrl+2 hears tile 2', await audioTileIndex(), 1);
   // ...and moves keyboard focus into tile 2, so YouTube's F/space/arrows act on it.
   const tile2Wc = await page.evaluate(() => window.__tilewall.recs.get(window.__tilewall.state.tiles[1].id).wv.getWebContentsId());
-  expect('Ctrl+2 gives tile 2 keyboard focus (main)', await app.evaluate(() => global.__twLastFocusedTile), tile2Wc);
+  expect('Ctrl+2 picks tile 2 for keys', await app.evaluate(() => global.__twKeyTarget()), tile2Wc);
+  // A plain F that lands in tile 1 (the tile clicked last) must fullscreen tile 2.
+  const fullscreenIn = () =>
+    page.evaluate(async () => {
+      const out = [];
+      for (const t of window.__tilewall.state.tiles) {
+        const rec = window.__tilewall.recs.get(t.id);
+        out.push(await rec.wv.executeJavaScript('!!document.fullscreenElement').catch(() => null));
+      }
+      return out;
+    });
+  const pressInTile1 = (key, code) =>
+    app.evaluate(({ webContents }, a) => {
+      const g = webContents.getAllWebContents().find((w) => w.getType() === 'webview' && w.getURL().includes('fe8K8AzygU0'));
+      let moved = false;
+      for (const type of ['keyDown', 'keyUp']) {
+        g.emit('before-input-event', { preventDefault: () => (moved = true) }, { type, key: a.key, code: a.code, control: false, shift: false, alt: false, meta: false });
+      }
+      return moved;
+    }, { key, code });
+  expect('F typed in tile 1 is handed to tile 2', await pressInTile1('f', 'KeyF'), true);
+  await page.waitForTimeout(1500);
+  expect('F fullscreens tile 2 only', await fullscreenIn(), [false, true, false, false]);
+  await pressInTile1('Escape', 'Escape');
+  await page.waitForTimeout(1500);
+  expect('Esc exits it', await fullscreenIn(), [false, false, false, false]);
   expect(
     'Ctrl+2 gives tile 2 keyboard focus (page)',
     await page.evaluate(() => document.activeElement === window.__tilewall.recs.get(window.__tilewall.state.tiles[1].id).wv),

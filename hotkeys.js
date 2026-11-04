@@ -37,4 +37,39 @@ function hotkeyFor(input) {
   }
 }
 
-module.exports = { hotkeyFor };
+// Keys that may be handed from the tile that has keyboard focus to the tile
+// picked with Ctrl+1-9 (YouTube's F, K, J, L, M, space, arrows, digits, Esc...).
+// Returns the key name sendInputEvent expects, or null to leave the key alone.
+// Shift is allowed (YouTube uses Shift+N, < and >); Ctrl/Alt/Win combos never move.
+const NAMED = {
+  ' ': 'Space',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  Escape: 'Escape',
+  Enter: 'Enter',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  Home: 'Home',
+  End: 'End',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+};
+
+function forwardKeyCode(input) {
+  if (!input || (input.type !== 'keyDown' && input.type !== 'keyUp')) return null;
+  if (input.control || input.alt || input.meta) return null;
+  const key = input.key || '';
+  if (NAMED[key]) return NAMED[key];
+  if (key.length === 1 && key >= '!' && key <= '~') return key;
+  return null;
+}
+
+// Whether the key also types a character (needs a 'char' event after keyDown).
+function isPrintable(keyCode) {
+  return keyCode === 'Space' || (typeof keyCode === 'string' && keyCode.length === 1);
+}
+
+module.exports = { hotkeyFor, forwardKeyCode, isPrintable };
