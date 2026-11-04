@@ -49,7 +49,7 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
     const host = location.hostname.replace(/^(www\.|m\.)/, '');
     const isYT = /(^|\.)youtube\.com$/.test(host);
     const isTwitch = /(^|\.)twitch\.tv$/.test(host);
-    const st = { on: false, target: null, video: null, marked: [], pickedArea: 0, adSkip: false, adsSkipped: 0 };
+    const st = { on: false, target: null, video: null, picked: null, rank: 0, lastBetter: 0, marked: [], adSkip: false, adsSkipped: 0 };
 
     function watchable() {
       const p = location.pathname;
@@ -66,47 +66,89 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
       return r.width * r.height;
     }
 
-    function biggest(selector, skip) {
+    function biggest(selector) {
       let best = null;
       let bestA = 0;
       document.querySelectorAll(selector).forEach((el) => {
-        if (el === skip) return;
         const a = area(el);
         if (a > bestA) {
           best = el;
           bestA = a;
         }
       });
-      return best && bestA > 0 ? { el: best, a: bestA } : null;
+      return best && bestA > 0 ? { el: best, a: bestA, rank: 3 } : null;
     }
 
-    // On sites without their own rule, only a real player counts: a video
-    // of 12% of the tile, or an iframe (embedded player) of 35%, so ad boxes
-    // and consent frames are never picked.
-    function bigEnough(pick) {
-      if (!pick) return false;
-      if (isYT || isTwitch) return true;
-      const r = pick.el.getBoundingClientRect();
-      const share = pick.a / Math.max(1, innerWidth * innerHeight);
-      if (pick.el.tagName === 'IFRAME') return share >= 0.35 && Math.min(r.width, r.height) >= 200;
-      return share >= 0.12 && Math.min(r.width, r.height) >= 120;
+    // Every match for sel, including inside open shadow roots (some sites wrap
+    // their player in a custom element that hides it from normal lookups).
+    function deepAll(sel) {
+      const out = [];
+      const walk = (root) => {
+        root.querySelectorAll(sel).forEach((el) => out.push(el));
+        root.querySelectorAll('*').forEach((el) => {
+          if (el.shadowRoot) walk(el.shadowRoot);
+        });
+      };
+      walk(document);
+      return out;
     }
 
-    // The biggest video on the page; on other sites a big iframe player also counts.
+    function hasShadowInside(el) {
+      if (el.shadowRoot) return true;
+      for (const n of el.querySelectorAll('*')) if (n.shadowRoot) return true;
+      return false;
+    }
+
+    // The element in the page itself that stands for el: el, or the custom
+    // element hosting it. The page's CSS cannot reach inside a shadow root.
+    function anchor(el) {
+      let n = el;
+      for (let root = n.getRootNode(); root !== document && root.host; root = n.getRootNode()) n = root.host;
+      return n;
+    }
+
+    const PLAYER_BOXES = 'media-player, .plyr, .video-js, .jwplayer, [class*="player" i], [id*="player" i]';
+
+    // Sites without their own rule. A real player sits near the top of the page
+    // and is video-shaped. Ranked: a video (12% of the tile or more) = 3, an
+    // embedded player frame = 2, the site's player box before its video has
+    // started = 1. Comment widgets (tall), GIFs and ad boxes (small or far
+    // down the page) never qualify.
+    function genericPick() {
+      const vp = Math.max(1, innerWidth * innerHeight);
+      const limit = innerHeight * 1.2;
+      const shaped = (r) => {
+        const ar = r.width / Math.max(1, r.height);
+        return ar >= 1.2 && ar <= 2.6;
+      };
+      let best = null;
+      const consider = (el, rank, ok) => {
+        const r = el.getBoundingClientRect();
+        const a = r.width * r.height;
+        if (!a || r.top >= limit || !ok(r, a / vp, el)) return;
+        if (!best || rank > best.rank || (rank === best.rank && a > best.a)) best = { el, a, rank };
+      };
+      deepAll('video').forEach((v) => consider(v, 3, (r, s) => s >= 0.12 && Math.min(r.width, r.height) >= 120));
+      deepAll('iframe').forEach((f) => consider(f, 2, (r, s) => s >= 0.2 && Math.min(r.width, r.height) >= 200 && shaped(r)));
+      document.querySelectorAll(PLAYER_BOXES).forEach((p) =>
+        consider(p, 1, (r, s, el) => s >= 0.2 && shaped(r) && (!!el.querySelector('video, iframe, img, canvas') || hasShadowInside(el)))
+      );
+      return best;
+    }
+
     function pickMedia() {
-      const v = biggest('video');
-      if (v || isYT || isTwitch) return v;
-      const f = biggest('iframe');
-      return bigEnough(f) ? f : null;
+      return isYT || isTwitch ? biggest('video') : genericPick();
     }
 
-    // A late-loading real player beats what was picked earlier (generic sites only).
+    // Filled with an embedded frame or a player box: switch once something
+    // better shows up (the video starts). Checked every few seconds only.
     function betterPick() {
-      if (isYT || isTwitch || !st.video) return null;
-      const v = biggest('video', st.video);
-      if (!bigEnough(v)) return null;
-      if (st.video.tagName === 'IFRAME') return v;
-      return v.a > st.pickedArea * 1.5 ? v : null;
+      if (isYT || isTwitch || st.rank >= 3) return null;
+      const now = Date.now();
+      if (now - st.lastBetter < 2500) return null;
+      st.lastBetter = now;
+      const p = genericPick();
+      return p && p.rank > st.rank ? p : null;
     }
 
     // The player box around the video (so its controls come along).
@@ -134,7 +176,8 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
       st.marked = [];
       st.target = null;
       st.video = null;
-      st.pickedArea = 0;
+      st.picked = null;
+      st.rank = 0;
       H.removeAttribute('data-tw-fill');
       H.removeAttribute('data-tw-yt');
     }
@@ -146,8 +189,8 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
 
     function intact() {
       return (
-        st.target && st.video &&
-        st.target.isConnected && st.video.isConnected &&
+        st.target && st.video && st.picked &&
+        st.target.isConnected && st.video.isConnected && st.picked.isConnected &&
         (st.target === st.video || st.target.contains(st.video)) &&
         st.target.hasAttribute('data-tw-target') &&
         H.hasAttribute('data-tw-fill')
@@ -169,10 +212,11 @@ html[data-tw-fill][data-tw-yt] .ytp-chrome-bottom {
       }
       if (st.target) clear();
       pick = pick || pickMedia();
-      if (!bigEnough(pick)) return;
-      st.video = pick.el;
-      st.pickedArea = pick.a;
-      st.target = pick.el.tagName === 'IFRAME' ? pick.el : containerFor(pick.el);
+      if (!pick) return;
+      st.picked = pick.el;
+      st.rank = pick.rank;
+      st.video = anchor(pick.el);
+      st.target = pick.rank === 3 ? containerFor(st.video) : st.video;
       mark(st.target, 'data-tw-target');
       mark(st.video, 'data-tw-video');
       if (st.target !== st.video) {

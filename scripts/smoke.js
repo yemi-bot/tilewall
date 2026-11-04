@@ -7,6 +7,7 @@ const { _electron: electron } = require('playwright-core');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 
 const OUT = process.env.TW_SMOKE_OUT || path.join(os.tmpdir(), 'tilewall-smoke');
 const URLS = process.argv.slice(2).length
@@ -298,6 +299,33 @@ function launch(userData) {
   expect('tiles restored after restart', after, before);
   expect('audio tile restored', await page2.evaluate(() => window.__tilewall.state.tiles.findIndex((t) => t.id === window.__tilewall.state.audioId)), beforeAudio);
   await shot('08-after-restart');
+
+  // Sites without their own rule: a local stand-in for pages like Miruro, with
+  // the player hidden inside a custom element, a tall comments frame and a GIF
+  // video. Fill must take the player and never the comments or the GIF.
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(`<!doctype html><html><body style="margin:0;background:#222;color:#ccc;font:14px sans-serif">
+      <header style="height:60px">Site header</header>
+      <div class="playerContainer" id="box" style="width:75%;aspect-ratio:16/9;background:#333"><x-embed id="host" style="display:block;width:100%;height:100%"></x-embed></div>
+      <iframe id="comments" src="about:blank" style="width:70%;height:2400px;border:0;margin-top:10px;background:#444"></iframe>
+      <video id="gif" muted style="width:300px;height:220px;background:#555"></video>
+      <script>document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<iframe src="about:blank" style="width:100%;height:100%;border:0;background:#060"></iframe>';</script>
+    </body></html>`);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  await page2.evaluate((u) => window.__tilewall.addUrls(u), 'http://127.0.0.1:' + server.address().port + '/watch');
+  await page2.waitForTimeout(4000);
+  const fillTarget = () =>
+    page2.evaluate(async () => {
+      const { state, recs } = window.__tilewall;
+      const rec = recs.get(state.tiles[state.tiles.length - 1].id);
+      return rec.wv.executeJavaScript("(document.querySelector('[data-tw-target]') || {}).id || null");
+    });
+  expect('generic site: fill takes the hidden player, not comments or GIF', await fillTarget(), 'host');
+  await page2.waitForTimeout(3500); // past the 2.5 s re-check
+  expect('generic site: still the player a few seconds later', await fillTarget(), 'host');
+  server.close();
 
   console.log('CHECKS\n' + checks.join('\n'));
   console.log('ERRORS', JSON.stringify(errors.slice(0, 30), null, 1));
