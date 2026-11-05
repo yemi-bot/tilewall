@@ -24,6 +24,7 @@
     muteAll: false,
     gap: 2,
     followMouse: false,
+    stayLive: true,
     adblock: true,
     clean: false,
   };
@@ -63,6 +64,7 @@
       muteAll: state.muteAll,
       gap: state.gap,
       followMouse: state.followMouse,
+      stayLive: state.stayLive,
       adblock: state.adblock,
       clean: state.clean,
     };
@@ -108,6 +110,7 @@
     if (GAPS.includes(data.gap)) state.gap = data.gap;
     state.muteAll = !!data.muteAll;
     state.followMouse = !!data.followMouse;
+    state.stayLive = data.stayLive !== false;
     state.clean = !!data.clean;
     state.adblock = data.adblock !== false;
   }
@@ -768,12 +771,14 @@
 
   const btnMute = $('#btn-mute');
   const btnFollow = $('#btn-follow');
+  const btnLive = $('#btn-live');
   const btnGap = $('#btn-gap');
   const btnAdblock = $('#btn-adblock');
   const btnClean = $('#btn-clean');
   const btnFull = $('#btn-full');
   const btnHelp = $('#btn-help');
   btnFollow.innerHTML = ICON.pointer;
+  btnLive.innerHTML = ICON.live;
   btnGap.innerHTML = ICON.gap;
   btnAdblock.innerHTML = ICON.shield;
   btnClean.innerHTML = ICON.eyeOff;
@@ -792,6 +797,10 @@
     btnMute.title = state.muteAll ? 'Unmute (Ctrl+M)' : 'Mute all (Ctrl+M)';
     btnFollow.setAttribute('aria-pressed', String(state.followMouse));
     btnFollow.title = state.followMouse ? 'Sound follows your mouse: on (Ctrl+Shift+M)' : 'Sound follows your mouse: off (Ctrl+Shift+M)';
+    btnLive.setAttribute('aria-pressed', String(state.stayLive));
+    btnLive.title = state.stayLive
+      ? 'Stay live: on. A live stream that falls behind jumps back to live (not after you rewind on purpose).'
+      : 'Stay live: off';
     btnGap.title = 'Space between tiles: ' + state.gap + 'px';
     btnAdblock.setAttribute('aria-pressed', String(state.adblock));
     btnAdblock.title = !state.adblock ? 'Ad blocking: off'
@@ -843,6 +852,13 @@
         toast('Ad blocking ready. Reloaded the tiles.');
       }
     }
+  });
+  btnLive.addEventListener('click', () => {
+    state.stayLive = !state.stayLive;
+    tw.setStayLive(state.stayLive);
+    syncDock();
+    toast(state.stayLive ? 'Stay live on. Tiles that fall behind jump back to live.' : 'Stay live off.');
+    scheduleSave();
   });
   btnClean.addEventListener('click', () => toggleClean());
   btnFull.addEventListener('click', () => tw.toggleFullscreen());
@@ -999,6 +1015,8 @@
     relayout();
     applyAudio();
     started = true;
+    const gk = await tw.globalKeysStatus();
+    if (gk.failed && gk.failed.length) toast('Another app already uses ' + gk.failed.join(', ') + '. Those keys only work inside Tilewall.');
   }
 
   // Handy for debugging from DevTools (Ctrl+Shift+I) and for the smoke test.

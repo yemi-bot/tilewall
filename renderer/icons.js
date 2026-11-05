@@ -14,6 +14,7 @@
     solo: svg('<rect x="3" y="5" width="18" height="14" rx="1.6"/>'),
     volume: svg('<path d="M11 5 6.5 9H3.5v6h3L11 19z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6"/><path d="M18.5 6a8.5 8.5 0 0 1 0 12"/>'),
     mute: svg('<path d="M11 5 6.5 9H3.5v6h3L11 19z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>'),
+    live: svg('<circle cx="12" cy="12" r="2.2"/><path d="M8.4 8.4a5.1 5.1 0 0 0 0 7.2M15.6 8.4a5.1 5.1 0 0 1 0 7.2M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/>'),
     pointer: svg('<path d="M5 4l6.5 15.5 2.3-6.2L20 11z"/>'),
     gap: svg('<rect x="3" y="4" width="7.5" height="16" rx="1.2"/><rect x="13.5" y="4" width="7.5" height="16" rx="1.2"/>'),
     shield: svg('<path d="M12 3.2 19.5 6v5.6c0 4.4-3.2 8.1-7.5 9.2-4.3-1.1-7.5-4.8-7.5-9.2V6z"/><path d="m9 12 2 2 4-4"/>'),

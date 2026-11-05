@@ -160,6 +160,11 @@ function launch(userData) {
   // ...and moves keyboard focus into tile 2, so YouTube's F/space/arrows act on it.
   const tile2Wc = await page.evaluate(() => window.__tilewall.recs.get(window.__tilewall.state.tiles[1].id).wv.getWebContentsId());
   expect('Ctrl+2 picks tile 2 for keys', await app.evaluate(() => global.__twKeyTarget()), tile2Wc);
+  expect(
+    'Ctrl+2 gives tile 2 keyboard focus (page)',
+    await page.evaluate(() => document.activeElement === window.__tilewall.recs.get(window.__tilewall.state.tiles[1].id).wv),
+    true
+  );
   // A plain F that lands in tile 1 (the tile clicked last) must fullscreen tile 2.
   const fullscreenIn = () =>
     page.evaluate(async () => {
@@ -185,11 +190,37 @@ function launch(userData) {
   await pressInTile1('Escape', 'Escape');
   await page.waitForTimeout(1500);
   expect('Esc exits it', await fullscreenIn(), [false, false, false, false]);
-  expect(
-    'Ctrl+2 gives tile 2 keyboard focus (page)',
-    await page.evaluate(() => document.activeElement === window.__tilewall.recs.get(window.__tilewall.state.tiles[1].id).wv),
-    true
-  );
+
+  // Ctrl+Alt keys work from any app (the test calls the handler; it never grabs real keys).
+  expect('Ctrl+Alt+4 is a known key', await app.evaluate(() => global.__twGlobalKey('CommandOrControl+Alt+4')), true);
+  await page.waitForTimeout(400);
+  expect('Ctrl+Alt+4 hears tile 4', await audioTileIndex(), 3);
+  const tile4Wc = await page.evaluate(() => window.__tilewall.recs.get(window.__tilewall.state.tiles[3].id).wv.getWebContentsId());
+  expect('Ctrl+Alt+4 picks tile 4 for keys', await app.evaluate(() => global.__twKeyTarget()), tile4Wc);
+
+  // Stay live on the live tile (tile 3, Lofi Girl). Drift with no input: jumps back.
+  const inTile3 = (code) =>
+    page.evaluate((c) => {
+      const rec = window.__tilewall.recs.get(window.__tilewall.state.tiles[2].id);
+      return rec.wv.executeJavaScript(c);
+    }, code);
+  const live0 = await inTile3('window.__twLive ? window.__twLive.status() : null');
+  expect('stay live is installed on the live tile', !!(live0 && live0.on && live0.live), true);
+  await inTile3("(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.currentTime - 60; return true; })()");
+  await page.waitForTimeout(12000);
+  const live1 = await inTile3('window.__twLive.status()');
+  console.log('stay live after drift', JSON.stringify(live1));
+  expect('drifted 60 s behind: jumped back to live', live1.jumps >= 1 && (live1.atHead === true || (live1.lag != null && live1.lag < 8)), true);
+  // A rewind you make yourself is left alone.
+  await inTile3("(() => { document.dispatchEvent(new Event('pointerdown')); const v = document.querySelector('#movie_player video'); v.currentTime = v.currentTime - 60; return true; })()");
+  await page.waitForTimeout(12000);
+  const live2 = await inTile3('window.__twLive.status()');
+  console.log('stay live after rewind', JSON.stringify(live2));
+  expect('rewound on purpose: stays behind', live2.userBehind === true && live2.atHead === false && live2.jumps === live1.jumps, true);
+  await inTile3("document.querySelector('#movie_player').seekToLiveHead()");
+  await page.waitForTimeout(3000);
+  expect('back at live clears the rewind', (await inTile3('window.__twLive.status()')).userBehind, false);
+  await page.evaluate(() => window.__tilewall.onHotkey('audio:3'));
   await page.evaluate(() => window.__tilewall.onHotkey('audio:3'));
   await page.waitForTimeout(300);
   const audio = await audioReport();

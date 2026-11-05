@@ -18,4 +18,6 @@ contextBridge.exposeInMainWorld('tw', {
   onFullscreen: (cb) => ipcRenderer.on('fullscreen', (_e, on) => cb(!!on)),
   onAdblock: (cb) => ipcRenderer.on('adblock', (_e, s) => cb(s)),
   focusTile: (id) => ipcRenderer.send('tile:focus', Number(id)),
+  setStayLive: (on) => ipcRenderer.invoke('stay-live:set', !!on),
+  globalKeysStatus: () => ipcRenderer.invoke('global-keys:status'),
 });

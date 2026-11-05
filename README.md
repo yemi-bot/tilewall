@@ -23,6 +23,8 @@ Works with YouTube (videos, live streams, channel `/live` links), Twitch, Kick, 
 | Ctrl+1 to Ctrl+9 | Hear that tile (it also becomes the big tile in Focus and Solo) |
 | Ctrl+M or Ctrl+0 | Mute all / unmute |
 | Ctrl+Shift+M | Sound follows your mouse |
+| Ctrl+Alt+1 to Ctrl+Alt+9 | Same as Ctrl+1-9, but works while you are in another app (a game, a browser) |
+| Ctrl+Alt+M, Ctrl+Alt+F, Ctrl+Alt+L | Mute all, one tile only, switch layout, from any app |
 | Ctrl+L | Switch layout: Grid, Focus, Solo |
 | Ctrl+F | One tile only, press again to go back |
 | Ctrl+H | Hide all controls for a clean wall |
@@ -34,6 +36,9 @@ Works with YouTube (videos, live streams, channel `/live` links), Twitch, Kick, 
 ## Notes
 
 - One tile plays sound at a time. The others keep playing, muted.
+- Stay live (toolbar, on by default): a live stream that falls about 20 seconds behind jumps back to live. If you rewind on purpose, it leaves you alone until you are back at live. It works inside embedded players too.
+- Ctrl+Alt keys never pull Tilewall to the front. If another app already uses one, Tilewall says so at startup and that key only works inside Tilewall.
+- Paid services with copy protection (League Pass, ESPN, YouTube TV, Prime, Peacock, Max) do not play yet: the Electron engine has no Widevine.
 - Ad blocking is on by default, and the shield button in the toolbar turns it off. It has three layers:
   - YouTube: ad slots are removed from the player data before YouTube's player reads it (`tile-preload.js`).
   - YouTube backup: if an ad still starts, Skip is pressed for you, or the ad jumps to its end.
@@ -65,6 +70,7 @@ If `npm start` does nothing from a VS Code terminal, clear `ELECTRON_RUN_AS_NODE
 | `tile-preload.js` | YouTube ad layer, runs in each tile before the page's own scripts |
 | `preload.js` | The small bridge the app page uses to talk to `main.js` |
 | `renderer/app.js` | Tiles, layouts, audio, toolbar, hover bars, drag to swap |
+| `stay-live.js` | Catches live streams up when they drift; injected into every frame of a tile |
 | `renderer/fill.js` | The script and CSS injected into each tile to make its player fill the tile |
 | `renderer/layout.js` | Grid, Focus and Solo math |
 | `renderer/urls.js` | Cleans pasted links (youtu.be, /live, /shorts, channel links) |

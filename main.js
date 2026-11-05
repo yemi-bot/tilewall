@@ -1,9 +1,10 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, session, shell, Menu, clipboard, screen, nativeTheme, webContents } = require('electron');
+const { app, BrowserWindow, ipcMain, session, shell, Menu, clipboard, screen, nativeTheme, webContents, webFrameMain, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { hotkeyFor, forwardKeyCode, isPrintable } = require('./hotkeys');
+const { stayLive } = require('./stay-live');
 
 const PARTITION = 'persist:tilewall';
 const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'clipboard-sanitized-write']);
@@ -36,6 +37,8 @@ let blockerPromise = null;
 let blockerOn = false;
 let blockerWanted = false;
 let blockerError = null;
+let stayLiveOn = true;
+let globalKeysFailed = [];
 
 
 // ---------- saved state ----------
@@ -263,6 +266,62 @@ function forwardKey(fromWc, input) {
 
 global.__twKeyTarget = () => keyTargetId; // read by the smoke test
 
+// ---------- stay live ----------
+// Injected into every frame of every tile, because the player on many sports
+// sites lives in an embedded frame that the tile page itself cannot reach.
+
+const STAY_LIVE_SRC = '(' + stayLive.toString() + ')';
+
+function injectStayLive(frame) {
+  if (!frame || frame.isDestroyed?.() || !isWebUrl(frame.url)) return;
+  frame.executeJavaScript(STAY_LIVE_SRC + '(' + (stayLiveOn ? 'true' : 'false') + ')').catch(() => {});
+}
+
+function setStayLive(on) {
+  stayLiveOn = !!on;
+  for (const wc of webContents.getAllWebContents()) {
+    if (wc.getType() !== 'webview' || wc.isDestroyed()) continue;
+    for (const frame of wc.mainFrame.framesInSubtree) injectStayLive(frame);
+  }
+  return stayLiveOn;
+}
+
+// ---------- hotkeys that work in any app ----------
+// Ctrl+Alt so they never clash with games, chat or typing elsewhere.
+
+const GLOBAL_KEYS = [
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ['CommandOrControl+Alt+' + n, 'audio:' + n]),
+  ['CommandOrControl+Alt+0', 'muteall'],
+  ['CommandOrControl+Alt+M', 'muteall'],
+  ['CommandOrControl+Alt+F', 'solo'],
+  ['CommandOrControl+Alt+L', 'layout'],
+];
+
+function onGlobalKey(hk) {
+  sendToApp('hotkey', hk);
+}
+global.__twGlobalKey = (accelerator) => {
+  const hit = GLOBAL_KEYS.find(([acc]) => acc === accelerator);
+  if (hit) onGlobalKey(hit[1]);
+  return !!hit;
+}; // used by the smoke test instead of real keys
+
+function registerGlobalKeys() {
+  // Test runs never grab system-wide keys from the person using the machine.
+  if (process.env.TW_USER_DATA) return;
+  globalKeysFailed = [];
+  for (const [acc, hk] of GLOBAL_KEYS) {
+    let ok = false;
+    try {
+      ok = globalShortcut.register(acc, () => onGlobalKey(hk));
+    } catch (e) {
+      ok = false;
+    }
+    if (!ok) globalKeysFailed.push(acc.replace('CommandOrControl', 'Ctrl'));
+  }
+  if (globalKeysFailed.length) console.warn('[tilewall] taken by another app:', globalKeysFailed.join(', '));
+}
+
 app.on('web-contents-created', (_e, wc) => {
   wc.on('before-input-event', (event, input) => {
     if (input.key === 'Control' && !input.isAutoRepeat) {
@@ -283,6 +342,9 @@ app.on('web-contents-created', (_e, wc) => {
   });
 
   if (wc.getType() === 'webview') {
+    wc.on('did-frame-finish-load', (_ev, _isMain, processId, routingId) => {
+      injectStayLive(webFrameMain.fromId(processId, routingId));
+    });
     // Popups would steal a tile or spam the browser. Links open through the right-click menu.
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.on('context-menu', (_ev, params) => guestContextMenu(wc, params));
@@ -424,13 +486,17 @@ ipcMain.on('state:save-now', (e, data) => {
 ipcMain.handle('adblock:set', (_e, on) => setAdblock(!!on));
 ipcMain.handle('adblock:status', () => adblockStatus());
 ipcMain.handle('win:is-fullscreen', () => !!(win && win.isFullScreen()));
+ipcMain.handle('stay-live:set', (_e, on) => setStayLive(on));
+ipcMain.handle('global-keys:status', () => ({ failed: globalKeysFailed }));
 ipcMain.on('win:fullscreen', () => toggleFullscreen());
 // Give keyboard focus to one of this window's tiles.
 ipcMain.on('tile:focus', (_e, id) => {
   const wc = webContents.fromId(id);
   if (!wc || wc.isDestroyed() || wc.getType() !== 'webview' || !win || wc.hostWebContents !== win.webContents) return;
   keyTargetId = id;
-  wc.focus();
+  // Only when Tilewall is the active window: a Ctrl+Alt key pressed while you
+  // are in a game must not pull Tilewall to the front.
+  if (win.isFocused()) wc.focus();
 });
 ipcMain.on('open-external', (_e, url) => {
   if (isWebUrl(url)) shell.openExternal(url);
@@ -457,9 +523,13 @@ if (GOT_LOCK) {
     const wantAdblock = !saved.app || saved.app.adblock !== false;
     if (wantAdblock) await withTimeout(setAdblock(true), 6000);
 
+    stayLiveOn = !saved.app || saved.app.stayLive !== false;
+    registerGlobalKeys();
     createWindow();
   });
 }
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
 
 app.on('before-quit', () => {
   rememberWindow();
