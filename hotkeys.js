@@ -15,6 +15,8 @@ function hotkeyFor(input) {
     return digit[1] === '0' ? 'muteall' : 'audio:' + digit[1];
   }
   switch (key) {
+    case 'tab':
+      return input.shift ? 'prev' : 'next';
     case 'n':
     case 't':
       return input.shift ? null : 'add';

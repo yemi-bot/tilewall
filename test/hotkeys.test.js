@@ -27,6 +27,12 @@ test('letter shortcuts', () => {
   assert.equal(hotkeyFor(key({ key: '/', code: 'Slash', control: true })), 'help');
 });
 
+test('ctrl + tab steps to the next tile, with shift the one before', () => {
+  assert.equal(hotkeyFor(key({ key: 'Tab', code: 'Tab', control: true })), 'next');
+  assert.equal(hotkeyFor(key({ key: 'Tab', code: 'Tab', control: true, shift: true })), 'prev');
+  assert.equal(hotkeyFor(key({ key: 'Tab', code: 'Tab' })), null);
+});
+
 test('function keys', () => {
   assert.equal(hotkeyFor(key({ key: 'F11', code: 'F11' })), 'fullscreen');
   assert.equal(hotkeyFor(key({ key: 'F1', code: 'F1' })), 'help');

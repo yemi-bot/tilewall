@@ -935,6 +935,15 @@
       }
       return;
     }
+    if (k === 'next' || k === 'prev') {
+      const n = state.tiles.length;
+      if (!n) return;
+      const at = Math.max(0, state.tiles.findIndex((t) => t.id === currentId()));
+      const t = state.tiles[(at + (k === 'next' ? 1 : n - 1)) % n];
+      setAudio(t.id, { alsoMain: true });
+      focusTile(t.id);
+      return;
+    }
     switch (k) {
       case 'add':
         openAdd();

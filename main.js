@@ -288,9 +288,12 @@ function setStayLive(on) {
 
 // ---------- hotkeys that work in any app ----------
 // Ctrl+Alt so they never clash with games, chat or typing elsewhere.
+// Ctrl+Alt+Tab cannot be used: Windows keeps it for its own task switcher.
 
 const GLOBAL_KEYS = [
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ['CommandOrControl+Alt+' + n, 'audio:' + n]),
+  ['CommandOrControl+Alt+Right', 'next'],
+  ['CommandOrControl+Alt+Left', 'prev'],
   ['CommandOrControl+Alt+0', 'muteall'],
   ['CommandOrControl+Alt+M', 'muteall'],
   ['CommandOrControl+Alt+F', 'solo'],

@@ -24,6 +24,8 @@ Works with YouTube (videos, live streams, channel `/live` links), Twitch, Kick, 
 | Ctrl+M or Ctrl+0 | Mute all / unmute |
 | Ctrl+Shift+M | Sound follows your mouse |
 | Ctrl+Alt+1 to Ctrl+Alt+9 | Same as Ctrl+1-9, but works while you are in another app (a game, a browser) |
+| Ctrl+Alt+Right / Ctrl+Alt+Left | Next / previous tile (sound, big tile, keys), from any app. Ctrl+Alt+Tab is not possible: Windows keeps it for its task switcher |
+| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tile, inside Tilewall |
 | Ctrl+Alt+M, Ctrl+Alt+F, Ctrl+Alt+L | Mute all, one tile only, switch layout, from any app |
 | Ctrl+L | Switch layout: Grid, Focus, Solo |
 | Ctrl+F | One tile only, press again to go back |

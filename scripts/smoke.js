@@ -197,6 +197,24 @@ function launch(userData) {
   expect('Ctrl+Alt+4 hears tile 4', await audioTileIndex(), 3);
   const tile4Wc = await page.evaluate(() => window.__tilewall.recs.get(window.__tilewall.state.tiles[3].id).wv.getWebContentsId());
   expect('Ctrl+Alt+4 picks tile 4 for keys', await app.evaluate(() => global.__twKeyTarget()), tile4Wc);
+  // Next / previous tile from any app, wrapping at the ends.
+  await app.evaluate(() => global.__twGlobalKey('CommandOrControl+Alt+Right'));
+  await page.waitForTimeout(400);
+  expect('Ctrl+Alt+Right from tile 4 wraps to tile 1', await audioTileIndex(), 0);
+  const tile1Wc = await page.evaluate(() => window.__tilewall.recs.get(window.__tilewall.state.tiles[0].id).wv.getWebContentsId());
+  expect('Ctrl+Alt+Right picks tile 1 for keys', await app.evaluate(() => global.__twKeyTarget()), tile1Wc);
+  await app.evaluate(() => global.__twGlobalKey('CommandOrControl+Alt+Left'));
+  await page.waitForTimeout(400);
+  expect('Ctrl+Alt+Left goes back to tile 4', await audioTileIndex(), 3);
+  // Inside the app, Ctrl+Tab does the same (through the real key filter).
+  const ctrlTab = await app.evaluate(({ webContents }) => {
+    const guest = webContents.getAllWebContents().find((w) => w.getType() === 'webview');
+    let prevented = false;
+    guest.emit('before-input-event', { preventDefault: () => (prevented = true) }, { type: 'keyDown', key: 'Tab', code: 'Tab', control: true, shift: false, alt: false, meta: false });
+    return prevented;
+  });
+  await page.waitForTimeout(400);
+  expect('Ctrl+Tab inside a tile goes to the next tile', ctrlTab && (await audioTileIndex()) === 0, true);
 
   // Stay live on the live tile (tile 3, Lofi Girl). Drift with no input: jumps back.
   const inTile3 = (code) =>
