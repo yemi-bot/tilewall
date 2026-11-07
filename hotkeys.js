@@ -17,6 +17,8 @@ function hotkeyFor(input) {
   switch (key) {
     case 'tab':
       return input.shift ? 'prev' : 'next';
+    case 'w':
+      return input.shift ? null : 'close';
     case 'n':
     case 't':
       return input.shift ? null : 'add';

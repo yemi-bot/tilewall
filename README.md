@@ -14,7 +14,7 @@ Works with YouTube (videos, live streams, channel `/live` links), Twitch, Kick, 
 - Paste one or more links and press Enter. Spaces, commas or new lines between links all work.
 - **Top edge of a tile**: hover for its controls: hear it, make it the big one, fill or page view, back, reload, open in your browser, remove. Click the title to change the link. Drag the dots to swap tiles.
 - **Bottom edge of the window**: hover for the toolbar: add links, layout, mute, sound follows mouse, gap, ad blocking, hide controls, fullscreen, help.
-- **Right-click inside a tile**: back, forward, reload, open link or page in your browser.
+- **Right-click inside a tile**: back, forward, reload, open link or page in your browser, close this tile.
 - Everything is saved. Close it and it comes back the same way.
 
 | Keys | What it does |
@@ -27,6 +27,7 @@ Works with YouTube (videos, live streams, channel `/live` links), Twitch, Kick, 
 | Ctrl+Alt+Right / Ctrl+Alt+Left | Next / previous tile (sound, big tile, keys), from any app. Ctrl+Alt+Tab is not possible: Windows keeps it for its task switcher |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tile, inside Tilewall |
 | Ctrl+Alt+M, Ctrl+Alt+F, Ctrl+Alt+L | Mute all, one tile only, switch layout, from any app |
+| Ctrl+W | Close the picked tile (the one you clicked last or picked with Ctrl+1-9). Undo is in the message that pops up |
 | Ctrl+L | Switch layout: Grid, Focus, Solo |
 | Ctrl+F | One tile only, press again to go back |
 | Ctrl+H | Hide all controls for a clean wall |

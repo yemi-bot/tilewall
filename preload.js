@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('tw', {
   onPointer: (cb) => ipcRenderer.on('pointer', (_e, p) => cb(p)),
   onFullscreen: (cb) => ipcRenderer.on('fullscreen', (_e, on) => cb(!!on)),
   onAdblock: (cb) => ipcRenderer.on('adblock', (_e, s) => cb(s)),
+  onCloseTile: (cb) => ipcRenderer.on('close-tile', (_e, wcId) => cb(wcId)),
   focusTile: (id) => ipcRenderer.send('tile:focus', Number(id)),
   setStayLive: (on) => ipcRenderer.invoke('stay-live:set', !!on),
   globalKeysStatus: () => ipcRenderer.invoke('global-keys:status'),

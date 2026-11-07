@@ -33,6 +33,12 @@ test('ctrl + tab steps to the next tile, with shift the one before', () => {
   assert.equal(hotkeyFor(key({ key: 'Tab', code: 'Tab' })), null);
 });
 
+test('ctrl + w closes the picked tile', () => {
+  assert.equal(hotkeyFor(key({ key: 'w', code: 'KeyW', control: true })), 'close');
+  assert.equal(hotkeyFor(key({ key: 'W', code: 'KeyW', control: true, shift: true })), null);
+  assert.equal(hotkeyFor(key({ key: 'w', code: 'KeyW' })), null);
+});
+
 test('function keys', () => {
   assert.equal(hotkeyFor(key({ key: 'F11', code: 'F11' })), 'fullscreen');
   assert.equal(hotkeyFor(key({ key: 'F1', code: 'F1' })), 'help');

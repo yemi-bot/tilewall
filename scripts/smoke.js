@@ -21,6 +21,8 @@ const URLS = process.argv.slice(2).length
 const SETTLE_MS = Number(process.env.TW_SETTLE_MS || 18000);
 
 let app;
+const checks = [];
+const errors = [];
 
 // Shells spawned by editors built on Electron (VS Code) set ELECTRON_RUN_AS_NODE,
 // which turns electron.exe into plain node. Drop it for the launch.
@@ -77,7 +79,6 @@ function launch(userData) {
   fs.mkdirSync(OUT, { recursive: true });
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ud-'));
   app = await launch(userData);
-  const errors = [];
   const page = await app.firstWindow();
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => {
@@ -85,6 +86,9 @@ function launch(userData) {
   });
 
   await page.waitForSelector('#empty:not([hidden])', { timeout: 20000 });
+  // A fresh profile downloads the ad block lists. If they landed mid-test, the
+  // app would reload every tile and toast over the Undo message, so wait first.
+  await page.waitForFunction(() => window.tw.adblockStatus().then((s) => s.on), null, { timeout: 120000, polling: 1000 }).catch(() => console.log('ad blocking not ready after 2 min'));
   await page.waitForTimeout(500);
   await shot('01-empty');
 
@@ -103,7 +107,6 @@ function launch(userData) {
       bars: [...document.querySelectorAll('.tile')].map((el) => el.classList.contains('bar-show')),
       dock: document.querySelector('#dock').classList.contains('show'),
     }));
-  const checks = [];
   const expect = (name, got, want) => checks.push((JSON.stringify(got) === JSON.stringify(want) ? 'PASS ' : 'FAIL ') + name + ' ' + JSON.stringify(got));
 
   const r2 = await page.evaluate(() => window.__tilewall.recs.get(window.__tilewall.state.tiles[1].id).rect);
@@ -305,6 +308,30 @@ function launch(userData) {
   expect('undo restores 4 tiles', await page.evaluate(() => window.__tilewall.state.tiles.length), 4);
   await page.evaluate(() => window.__tilewall.onHotkey('muteall'));
 
+  // Right-click "Close this tile" closes that tile only; Undo puts it back in place.
+  const tileIds = () => page.evaluate(() => window.__tilewall.state.tiles.map((t) => t.id));
+  const wcOf = (i) => page.evaluate((n) => window.__tilewall.recs.get(window.__tilewall.state.tiles[n].id).wv.getWebContentsId(), i);
+  const ids0 = await tileIds();
+  expect('right-click menu has Close this tile', await app.evaluate((_e, id) => global.__twTileMenuClick(id, 'Close this tile'), await wcOf(2)), true);
+  await page.waitForTimeout(400);
+  expect('right-click close removes tile 3 only', JSON.stringify(await tileIds()), JSON.stringify(ids0.filter((_, i) => i !== 2)));
+  await page.click('#toast-action');
+  await page.waitForTimeout(800);
+  expect('undo puts it back in place', JSON.stringify(await tileIds()), JSON.stringify(ids0));
+  // Ctrl+W closes the picked tile (tile 2 here), even when the key lands in tile 1.
+  await page.evaluate(() => window.__tilewall.onHotkey('audio:2'));
+  await page.waitForTimeout(300);
+  const ctrlW = await app.evaluate(({ webContents }, id) => {
+    let prevented = false;
+    webContents.fromId(id).emit('before-input-event', { preventDefault: () => (prevented = true) }, { type: 'keyDown', key: 'w', code: 'KeyW', control: true, shift: false, alt: false, meta: false });
+    return prevented;
+  }, await wcOf(0));
+  await page.waitForTimeout(400);
+  expect('Ctrl+W in tile 1 closes the picked tile 2', ctrlW && JSON.stringify(await tileIds()) === JSON.stringify(ids0.filter((_, i) => i !== 1)), true);
+  await page.click('#toast-action');
+  await page.waitForTimeout(800);
+  expect('undo after Ctrl+W restores 4 tiles', JSON.stringify(await tileIds()), JSON.stringify(ids0));
+
   // Focus layout: dropping a strip tile on the big tile makes it the big one.
   await page.evaluate(() => window.__tilewall.setLayout('focus'));
   await page.waitForTimeout(500);
@@ -383,6 +410,8 @@ function launch(userData) {
   if (checks.some((c) => c.startsWith('FAIL'))) process.exitCode = 1;
 })().catch(async (e) => {
   console.error('SMOKE FAILED', e);
+  console.log('CHECKS SO FAR\n' + checks.join('\n'));
+  console.log('ERRORS', JSON.stringify(errors.slice(0, 30), null, 1));
   if (app) await app.close().catch(() => {});
   process.exit(1);
 });

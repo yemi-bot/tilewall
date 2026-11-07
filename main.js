@@ -205,7 +205,7 @@ function toggleFullscreen() {
   win.setFullScreen(!win.isFullScreen());
 }
 
-function guestContextMenu(wc, p) {
+function tileMenuItems(wc, p) {
   const items = [];
   if (p.linkURL && /^https?:/i.test(p.linkURL)) {
     items.push(
@@ -227,10 +227,25 @@ function guestContextMenu(wc, p) {
     { label: 'Reload', click: () => wc.reload() },
     { type: 'separator' },
     { label: 'Open page in your browser', enabled: isWebUrl(wc.getURL()), click: () => shell.openExternal(wc.getURL()) },
-    { label: 'Copy page link', click: () => clipboard.writeText(wc.getURL()) }
+    { label: 'Copy page link', click: () => clipboard.writeText(wc.getURL()) },
+    { type: 'separator' },
+    { label: 'Close this tile', accelerator: 'Ctrl+W', registerAccelerator: false, click: () => sendToApp('close-tile', wc.id) }
   );
-  Menu.buildFromTemplate(items).popup({ window: win });
+  return items;
 }
+
+function guestContextMenu(wc, p) {
+  Menu.buildFromTemplate(tileMenuItems(wc, p)).popup({ window: win });
+}
+
+// The smoke test clicks a menu item through this (it cannot open a real menu).
+global.__twTileMenuClick = (id, label) => {
+  const wc = liveTile(id);
+  const item = wc && tileMenuItems(wc, {}).find((i) => i.label === label);
+  if (!item) return false;
+  item.click();
+  return true;
+};
 
 // ---------- picked tile for keys ----------
 // Real keys go to whichever tile Chromium thinks has focus (the one clicked
@@ -337,6 +352,11 @@ app.on('web-contents-created', (_e, wc) => {
       return;
     }
     event.preventDefault();
+    if (hk === 'close') {
+      // The picked tile (last clicked, or Ctrl+1-9), else the tile the key landed in.
+      const target = liveTile(keyTargetId) || (wc.getType() === 'webview' ? wc : null);
+      return sendToApp('close-tile', target ? target.id : null);
+    }
     if (hk === 'fullscreen') return toggleFullscreen();
     if (hk === 'devtools') return win && win.webContents.toggleDevTools();
     // Typing into the app's own fields needs focus pulled out of the tile.

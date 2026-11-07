@@ -979,6 +979,21 @@
   }
 
   tw.onHotkey(onHotkey);
+  // Right-click "Close this tile" or Ctrl+W: main names the tile by its page id
+  // (null = no tile picked, so close the one you hear).
+  tw.onCloseTile((wcId) => {
+    let id = null;
+    // No "attached" check: a tile that is still loading must close too.
+    for (const [tid, rec] of recs) {
+      try {
+        if (rec.wv.getWebContentsId() === wcId) id = tid;
+      } catch (e) {
+        /* this tile has no page yet, so it is not the one */
+      }
+    }
+    if (!id && wcId == null) id = currentId();
+    if (id) removeTile(id);
+  });
   tw.onFullscreen((on) => {
     isFull = on;
     syncDock();
