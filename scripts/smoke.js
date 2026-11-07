@@ -241,6 +241,20 @@ function launch(userData) {
   await inTile3("document.querySelector('#movie_player').seekToLiveHead()");
   await page.waitForTimeout(3000);
   expect('back at live clears the rewind', (await inTile3('window.__twLive.status()')).userBehind, false);
+  // Twitch reports a made-up endless seekable range (2^30 s); stay live once
+  // jumped there and froze the stream (11/06). It must still be playing.
+  const twitch = await page.evaluate(async () => {
+    const t = window.__tilewall.state.tiles.find((x) => x.url.includes('twitch.tv'));
+    const wv = window.__tilewall.recs.get(t.id).wv;
+    const read = () => wv.executeJavaScript("(() => { const v = document.querySelector('video'); const s = window.__twLive ? window.__twLive.status() : {}; return v ? { t: v.currentTime, paused: v.paused, live: s.live, jumps: s.jumps } : null; })()");
+    const a = await read();
+    await new Promise((r) => setTimeout(r, 3000));
+    return { a, b: await read() };
+  });
+  console.log('twitch', JSON.stringify(twitch));
+  // The channel can be offline (no stream to measure); the unit test covers the bug either way.
+  if (twitch.a && twitch.a.live) expect('Twitch tile keeps playing with stay live on', !twitch.b.paused && twitch.b.t > twitch.a.t && twitch.b.t < 1e6, true);
+  else console.log('SKIP Twitch playing check: the test channel is offline right now');
   await page.evaluate(() => window.__tilewall.onHotkey('audio:3'));
   await page.evaluate(() => window.__tilewall.onHotkey('audio:3'));
   await page.waitForTimeout(300);

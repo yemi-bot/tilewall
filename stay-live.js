@@ -11,6 +11,7 @@ function stayLive(on) {
 
   const LAG_JUMP = 20; // seconds behind live before catching up
   const LAG_LIVE = 8; // this close counts as live again
+  const MAX_BEHIND = 300; // a claimed live edge further than this past the downloaded data is not believed
   const st = { on: !!on, userBehind: false, userSeekAt: 0, behindSince: 0, ourSeekUntil: 0, lastInput: 0, jumps: 0 };
 
   // A seek right after you clicked, pressed a key or scrolled is yours.
@@ -70,7 +71,15 @@ function stayLive(on) {
     }
     const v = biggestVideo();
     if (!v || v.duration !== Infinity || !v.seekable || !v.seekable.length) return null;
-    const end = v.seekable.end(v.seekable.length - 1);
+    let end = v.seekable.end(v.seekable.length - 1);
+    // Some players (Twitch) report a made-up endless range (2^30 s). Jumping
+    // there freezes the video far past its data, so when the claimed end is
+    // way beyond what has downloaded, the downloaded end is the live edge.
+    const got = v.buffered && v.buffered.length ? v.buffered.end(v.buffered.length - 1) : NaN;
+    if (!isFinite(end) || end - (isFinite(got) ? got : v.currentTime) > MAX_BEHIND) {
+      if (!isFinite(got)) return null;
+      end = got;
+    }
     const lag = end - v.currentTime;
     return {
       lag: isFinite(lag) ? lag : null,
