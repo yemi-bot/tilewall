@@ -21,4 +21,7 @@ contextBridge.exposeInMainWorld('tw', {
   focusTile: (id) => ipcRenderer.send('tile:focus', Number(id)),
   setStayLive: (on) => ipcRenderer.invoke('stay-live:set', !!on),
   globalKeysStatus: () => ipcRenderer.invoke('global-keys:status'),
+  appInfo: () => ipcRenderer.invoke('app:info'),
+  onUpdateReady: (cb) => ipcRenderer.on('update-ready', (_e, version) => cb(String(version || ''))),
+  installUpdate: () => ipcRenderer.send('update:install'),
 });

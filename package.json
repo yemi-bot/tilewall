@@ -5,18 +5,62 @@
   "description": "Watch several streams or pages at once, each filling its own tile like it is fullscreen.",
   "main": "main.js",
   "private": true,
+  "license": "MIT",
+  "author": "Yemi",
+  "homepage": "https://github.com/yemi-bot/tilewall",
+  "repository": "github:yemi-bot/tilewall",
+  "bugs": "https://github.com/yemi-bot/tilewall/issues",
   "scripts": {
     "start": "electron .",
     "test": "node --test test/layout.test.js test/urls.test.js test/hotkeys.test.js test/yt-shield.test.js test/stay-live.test.js",
     "smoke": "node scripts/smoke.js",
-    "package": "node scripts/package.js"
+    "package": "node scripts/package.js",
+    "dist": "electron-builder --win --publish never",
+    "release": "node scripts/release.js"
+  },
+  "build": {
+    "appId": "io.github.yemi-bot.tilewall",
+    "productName": "Tilewall",
+    "copyright": "Copyright (c) 2026 Yemi",
+    "directories": {
+      "output": "dist/release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "tile-preload.js",
+      "hotkeys.js",
+      "stay-live.js",
+      "renderer/**",
+      "assets/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Tilewall-Setup-${version}.${ext}",
+      "shortcutName": "Tilewall",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "yemi-bot",
+      "repo": "tilewall",
+      "releaseType": "release"
+    }
   },
   "dependencies": {
-    "@ghostery/adblocker-electron": "2.20.1"
+    "@ghostery/adblocker-electron": "2.20.1",
+    "electron-updater": "6.8.11"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",
     "electron": "44.9.3",
+    "electron-builder": "26.18.0",
     "playwright-core": "1.64.1"
   }
 }

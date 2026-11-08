@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { hotkeyFor, forwardKeyCode, isPrintable } = require('./hotkeys');
 const { stayLive } = require('./stay-live');
+const PKG = require('./package.json');
 
 const PARTITION = 'persist:tilewall';
 const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'clipboard-sanitized-write']);
@@ -490,8 +491,42 @@ function createWindow() {
   startPointerPoll();
 }
 
+// ---------- updates ----------
+
+// Copies installed with the Setup file check GitHub Releases for a newer
+// version, download it quietly and install it when Tilewall closes (or right
+// away from the message). Builds without app-update.yml (npm start,
+// npm run package) never check.
+const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
+let updater = null;
+
+function startUpdates() {
+  const test = !!process.env.TW_UPDATE_TEST;
+  if (process.env.TW_USER_DATA && !test) return;
+  if (!app.isPackaged || !fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'))) return;
+  try {
+    updater = require('electron-updater').autoUpdater;
+  } catch (e) {
+    return;
+  }
+  updater.autoDownload = true;
+  updater.autoInstallOnAppQuit = !test; // a test run must never install anything
+  updater.on('error', () => {}); // offline or GitHub down: the next check tries again
+  updater.on('update-downloaded', (info) => sendToApp('update-ready', info && info.version));
+  const check = () => updater.checkForUpdates().catch(() => {});
+  check();
+  setInterval(check, UPDATE_CHECK_MS);
+}
+
 // ---------- ipc ----------
 
+ipcMain.handle('app:info', () => ({ version: app.getVersion(), home: PKG.homepage }));
+ipcMain.on('update:install', () => {
+  if (!updater) return;
+  rememberWindow();
+  writeStateNow();
+  updater.quitAndInstall(true, true);
+});
 ipcMain.handle('state:load', () => saved.app || null);
 ipcMain.on('state:save', (_e, data) => {
   if (data && typeof data === 'object') {
@@ -549,6 +584,7 @@ if (GOT_LOCK) {
     stayLiveOn = !saved.app || saved.app.stayLive !== false;
     registerGlobalKeys();
     createWindow();
+    startUpdates();
   });
 }
 

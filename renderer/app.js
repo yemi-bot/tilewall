@@ -126,7 +126,7 @@
     if (action) toastAction.textContent = action.label;
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), action ? 5000 : 2000);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), (action && action.ms) || (action ? 5000 : 2000));
   }
   toastAction.addEventListener('click', () => {
     const run = toastHandler;
@@ -886,6 +886,22 @@
   help.addEventListener('click', (e) => {
     if (e.target === help) toggleHelp(false);
   });
+  tw.appInfo().then((info) => {
+    $('#app-version').textContent = 'Tilewall ' + info.version;
+    const link = (sel, url) =>
+      $(sel).addEventListener('click', (e) => {
+        e.preventDefault();
+        tw.openExternal(url);
+      });
+    link('#report', info.home + '/issues');
+    link('#source', info.home);
+  });
+
+  // ---------- updates ----------
+
+  tw.onUpdateReady((v) =>
+    toast('Tilewall ' + v + ' is ready. It installs when you close Tilewall.', { label: 'Restart now', run: () => tw.installUpdate(), ms: 15000 })
+  );
 
   // ---------- empty state ----------
 
